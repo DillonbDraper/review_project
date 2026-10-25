@@ -1,5 +1,11 @@
 import Config
 
+# Exercise the development-only playback transport in channel tests.
+config :review_project, :youtube_sync_spike, true
+
+# Only in tests, remove the complexity from the password hashing algorithm
+config :argon2_elixir, t_cost: 1, m_cost: 8
+
 # Configure your database
 #
 # The MIX_TEST_PARTITION environment variable can be used

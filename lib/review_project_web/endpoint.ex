@@ -15,6 +15,23 @@ defmodule ReviewProjectWeb.Endpoint do
     websocket: [connect_info: [session: @session_options]],
     longpoll: [connect_info: [session: @session_options]]
 
+  # Phase 0 spike: raw membrane_webrtc_plugin signaling over a plain Phoenix
+  # socket (no LiveView), used by the Hologram WebRTC integration spike so the
+  # Hologram-owned browser PeerConnection can negotiate with Membrane Source/Sink.
+  socket "/signaling", Membrane.WebRTC.PhoenixSignaling.Socket,
+    websocket: true,
+    longpoll: false
+
+  if Application.compile_env(:review_project, :youtube_sync_spike, false) do
+    socket "/dev/spikes/room-access-socket", ReviewProjectWeb.RoomSpikeSocket,
+      websocket: [connect_info: [session: @session_options]],
+      longpoll: false
+
+    socket "/dev/spikes/youtube-sync-socket", ReviewProjectWeb.YouTubeSyncSocket,
+      websocket: true,
+      longpoll: false
+  end
+
   # Serve at "/" the static files from "priv/static" directory.
   #
   # When code reloading is disabled (e.g., in production),
@@ -41,6 +58,7 @@ defmodule ReviewProjectWeb.Endpoint do
     cookie_key: "request_logger"
 
   plug Plug.RequestId
+  plug :hologram_websocket_before_telemetry
   plug Plug.Telemetry, event_prefix: [:phoenix, :endpoint]
 
   plug Plug.Parsers,
@@ -51,5 +69,15 @@ defmodule ReviewProjectWeb.Endpoint do
   plug Plug.MethodOverride
   plug Plug.Head
   plug Plug.Session, @session_options
+  plug Hologram.Router
   plug ReviewProjectWeb.Router
+
+  defp hologram_websocket_before_telemetry(
+         %Plug.Conn{request_path: "/hologram/websocket"} = conn,
+         _opts
+       ) do
+    Hologram.Router.call(conn, [])
+  end
+
+  defp hologram_websocket_before_telemetry(conn, _opts), do: conn
 end

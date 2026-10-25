@@ -18,6 +18,19 @@ defmodule ReviewProject.Application do
       ReviewProjectWeb.Endpoint
     ]
 
+    # Phase 0 spike-only: pipeline session manager for the Hologram WebRTC spike.
+    children =
+      if Application.get_env(:review_project, :hologram_spikes, false) do
+        children ++
+          [
+            ReviewProject.MediaSpikes.EchoSessions,
+            ReviewProject.SyncSpikes.Rooms,
+            ReviewProject.OwnershipSpikes.Rooms
+          ]
+      else
+        children
+      end
+
     # See https://hexdocs.pm/elixir/Supervisor.html
     # for other strategies and supported options
     opts = [strategy: :one_for_one, name: ReviewProject.Supervisor]

@@ -23,6 +23,33 @@ end
 config :review_project, ReviewProjectWeb.Endpoint,
   http: [port: String.to_integer(System.get_env("PORT", "4000"))]
 
+# Opt-in development spike. Never put the shared secret into browser assets.
+if config_env() == :dev and System.get_env("TURN_SPIKE_CONFIG") do
+  turn = System.fetch_env!("TURN_SPIKE_CONFIG") |> File.read!() |> Jason.decode!()
+  {:ok, address} = :inet.parse_ipv4_address(String.to_charlist(turn["host"]))
+
+  true =
+    match?({10, _, _, _}, address) or match?({192, 168, _, _}, address) or
+      (elem(address, 0) == 172 and elem(address, 1) in 16..31)
+
+  ttl = turn["ttl_seconds"]
+  true = is_integer(ttl) and ttl in 60..86_400
+  secret = turn["secret_file"] |> File.read!() |> String.trim()
+  true = byte_size(secret) >= 32
+  tls_host = turn["tls_host"] || turn["host"]
+
+  true =
+    is_binary(tls_host) and byte_size(tls_host) <= 253 and
+      Regex.match?(~r/\A[a-zA-Z0-9.-]+\z/, tls_host)
+
+  config :review_project, :turn_spike, %{
+    host: turn["host"],
+    tls_host: tls_host,
+    secret_file: turn["secret_file"],
+    ttl_seconds: ttl
+  }
+end
+
 if config_env() == :prod do
   database_url =
     System.get_env("DATABASE_URL") ||

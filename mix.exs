@@ -5,12 +5,12 @@ defmodule ReviewProject.MixProject do
     [
       app: :review_project,
       version: "0.1.0",
-      elixir: "~> 1.15",
+      elixir: "~> 1.19",
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       aliases: aliases(),
       deps: deps(),
-      compilers: [:phoenix_live_view] ++ Mix.compilers(),
+      compilers: [:phoenix_live_view] ++ Mix.compilers() ++ [:hologram],
       listeners: [Phoenix.CodeReloader]
     ]
   end
@@ -40,6 +40,7 @@ defmodule ReviewProject.MixProject do
   # Type `mix help deps` for examples and options.
   defp deps do
     [
+      {:argon2_elixir, "~> 4.0"},
       {:phoenix, "~> 1.8.2"},
       {:phoenix_ecto, "~> 4.5"},
       {:ecto_sql, "~> 3.13"},
@@ -68,13 +69,22 @@ defmodule ReviewProject.MixProject do
       {:bandit, "~> 1.5"},
 
       # --- Hologram: Elixir->JS for client-side drawing / interop (Phase 2) ---
-      {:hologram, "~> 0.9.3"},
+      {:hologram, "~> 0.12.1"},
+      # Hologram uses the old :uuid app; Membrane uses its renamed :elixir_uuid
+      # successor. Both packages define UUID and UUID.Mixfile, breaking clean
+      # builds. Keep the old app name through a shim and compile UUID only once.
+      {:uuid, path: "vendor/uuid_compat", override: true},
 
       # --- Membrane: WebRTC SFU (live cam/voice conferencing, Phase 1) ---
       {:membrane_core, "~> 1.3"},
       # Raw WebRTC building block. Alternative to evaluate in the Phase 0
       # RTC-layer spike: {:membrane_rtc_engine, "~> 0.25.0"} (Fishjam umbrella).
       {:membrane_webrtc_plugin, "~> 0.26.5"},
+      # Phase 0 spike: membrane_webrtc_plugin 0.26.5 pins ex_webrtc ~> 0.15,
+      # but current browser DTLS interop appears stuck there. Try the latest
+      # ex_webrtc stack explicitly for the raw WebRTC deployability proof.
+      {:ex_webrtc, "~> 0.17.0", override: true},
+      {:ex_ice, "~> 0.16.0", override: true},
 
       # --- Membrane: media codecs & audio processing ---
       {:membrane_h264_ffmpeg_plugin, "~> 0.32.6"},

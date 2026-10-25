@@ -32,7 +32,17 @@
           dbstart = pkgs.writeShellScriptBin "dbstart" ''
             if [ ! -f "$PGDATA/PG_VERSION" ]; then
               echo "Initializing PostgreSQL database at $PGDATA..."
-              ${pkgs.postgresql_18}/bin/initdb -D "$PGDATA" --no-locale --encoding=UTF8
+              # Superuser "postgres" with password "postgres" to match config/dev.exs +
+              # config/test.exs. trust auth keeps local dev frictionless; the password is
+              # still set so it works if auth is ever tightened.
+              pwfile="$(mktemp)"
+              printf '%s' "postgres" > "$pwfile"
+              ${pkgs.postgresql_18}/bin/initdb -D "$PGDATA" \
+                --no-locale --encoding=UTF8 \
+                --username=postgres \
+                --pwfile="$pwfile" \
+                --auth-local=trust --auth-host=trust
+              rm -f "$pwfile"
             fi
 
             if ! ${pkgs.postgresql_18}/bin/pg_ctl -D "$PGDATA" status >/dev/null; then
@@ -58,6 +68,7 @@
               elixir
               git
               nodejs_24
+              esbuild
               tailwindcss_4
 
               # DB + helpers
@@ -94,6 +105,13 @@
               fi
 
               mkdir -p "$PGDATA"
+
+              # Use Nix-provided asset tool binaries instead of Phoenix-downloaded
+              # generic Linux binaries, which do not run on NixOS without patching.
+              export ESBUILD_PATH="${pkgs.esbuild}/bin/esbuild"
+              export ESBUILD_VERSION="${pkgs.esbuild.version}"
+              export TAILWIND_PATH="${pkgs.tailwindcss_4}/bin/tailwindcss"
+              export TAILWIND_VERSION="${pkgs.tailwindcss_4.version}"
 
               # Help bundlex-built Membrane NIFs find shared libs at runtime
               # (they don't always bake an rpath into the Nix store).

@@ -1,6 +1,8 @@
 defmodule ReviewProjectWeb.Router do
   use ReviewProjectWeb, :router
 
+  import ReviewProjectWeb.UsersAuth
+
   pipeline :browser do
     plug :accepts, ["html"]
     plug :fetch_session
@@ -8,6 +10,7 @@ defmodule ReviewProjectWeb.Router do
     plug :put_root_layout, html: {ReviewProjectWeb.Layouts, :root}
     plug :protect_from_forgery
     plug :put_secure_browser_headers
+    plug :fetch_current_scope_for_users
   end
 
   pipeline :api do
@@ -40,5 +43,47 @@ defmodule ReviewProjectWeb.Router do
       live_dashboard "/dashboard", metrics: ReviewProjectWeb.Telemetry
       forward "/mailbox", Plug.Swoosh.MailboxPreview
     end
+  end
+
+  ## Authentication routes
+
+  if Application.compile_env(:review_project, :youtube_sync_spike, false) do
+    scope "/dev/spikes/room-access", ReviewProjectWeb do
+      pipe_through [:browser, :require_authenticated_users]
+      post "/rooms", RoomSpikeController, :create
+    end
+
+    scope "/dev/spikes/room-access", ReviewProjectWeb do
+      pipe_through [:browser]
+      get "/sign-in", RoomSpikeController, :sign_in
+      get "/session", RoomSpikeController, :session
+    end
+  end
+
+  scope "/", ReviewProjectWeb do
+    pipe_through [:browser, :require_authenticated_users]
+
+    live_session :require_authenticated_users,
+      on_mount: [{ReviewProjectWeb.UsersAuth, :require_authenticated}] do
+      live "/users/settings", UsersLive.Settings, :edit
+      live "/users/settings/confirm-email/:token", UsersLive.Settings, :confirm_email
+    end
+
+    post "/users/update-password", UsersSessionController, :update_password
+  end
+
+  scope "/", ReviewProjectWeb do
+    pipe_through [:browser]
+
+    live_session :current_users,
+      on_mount: [{ReviewProjectWeb.UsersAuth, :mount_current_scope}] do
+      live "/spikes/webrtc-echo", WebRTCSpikes.EchoLive, :show
+      live "/users/register", UsersLive.Registration, :new
+      live "/users/log-in", UsersLive.Login, :new
+      live "/users/log-in/:token", UsersLive.Confirmation, :new
+    end
+
+    post "/users/log-in", UsersSessionController, :create
+    delete "/users/log-out", UsersSessionController, :delete
   end
 end

@@ -28,6 +28,9 @@ review_project-*.tar
 # Ignore assets that are produced by build tools.
 /priv/static/assets/
 
+# Hologram generated JavaScript bundles.
+/priv/static/hologram/
+
 # Ignore digested assets cache.
 /priv/static/cache_manifest.json
 
@@ -38,3 +41,13 @@ npm-debug.log
 # Pi project-local generated caches.
 /.pi/cache/
 
+# Local LAN-spike certificates, private keys and runtime logs.
+/.spike-lan/
+
+# Local coturn VM disk, runtime secrets and logs.
+/.spike-turn/
+
+# Spike 5 synthetic account fixtures, browser profiles and reports.
+/.spike-access/
+
+/.nix-data

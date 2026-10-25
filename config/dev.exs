@@ -52,6 +52,24 @@ config :review_project, ReviewProjectWeb.Endpoint,
 # configured to run both http and https servers on
 # different ports.
 
+# Optional HTTPS for real-browser integration spikes. Keep private keys outside
+# the repository; the default development listener remains HTTP on port 4000.
+if certfile = System.get_env("DEV_HTTPS_CERT") do
+  https_host = System.get_env("DEV_HTTPS_HOST", "localhost")
+
+  {:ok, https_ip} =
+    :inet.parse_address(String.to_charlist(System.get_env("DEV_HTTPS_IP", "127.0.0.1")))
+
+  config :review_project, ReviewProjectWeb.Endpoint,
+    https: [
+      ip: https_ip,
+      port: 4001,
+      certfile: certfile,
+      keyfile: System.fetch_env!("DEV_HTTPS_KEY")
+    ],
+    url: [scheme: "https", host: https_host, port: 4001]
+end
+
 # Reload browser tabs when matching files change.
 config :review_project, ReviewProjectWeb.Endpoint,
   live_reload: [
@@ -67,8 +85,10 @@ config :review_project, ReviewProjectWeb.Endpoint,
     ]
   ]
 
-# Enable dev routes for dashboard and mailbox
+# Enable dev routes for dashboard, mailbox, and throwaway Hologram spike pages.
 config :review_project, dev_routes: true
+config :review_project, :hologram_spikes, true
+config :review_project, :youtube_sync_spike, true
 
 # Do not include metadata nor timestamps in development logs
 config :logger, :default_formatter, format: "[$level] $message\n"

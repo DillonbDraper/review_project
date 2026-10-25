@@ -7,6 +7,19 @@
 # General application configuration
 import Config
 
+config :review_project, :scopes,
+  users: [
+    default: true,
+    module: ReviewProject.Accounts.Scope,
+    assign_key: :current_scope,
+    access_path: [:users, :id],
+    schema_key: :users_id,
+    schema_type: :id,
+    schema_table: :users,
+    test_data_fixture: ReviewProject.AccountsFixtures,
+    test_setup_helper: :register_and_log_in_users
+  ]
+
 config :review_project,
   ecto_repos: [ReviewProject.Repo],
   generators: [timestamp_type: :utc_datetime]
@@ -32,8 +45,12 @@ config :review_project, ReviewProjectWeb.Endpoint,
 config :review_project, ReviewProject.Mailer, adapter: Swoosh.Adapters.Local
 
 # Configure esbuild (the version is required)
+# On NixOS, use the Nix-provided binary instead of Phoenix's downloaded
+# generic Linux executable in _build, which cannot run without patching.
 config :esbuild,
-  version: "0.25.4",
+  version: System.get_env("ESBUILD_VERSION") || "0.25.4",
+  version_check: false,
+  path: System.get_env("ESBUILD_PATH") || System.find_executable("esbuild"),
   review_project: [
     args:
       ~w(js/app.js --bundle --target=es2022 --outdir=../priv/static/assets/js --external:/fonts/* --external:/images/* --alias:@=.),
@@ -42,8 +59,12 @@ config :esbuild,
   ]
 
 # Configure tailwind (the version is required)
+# On NixOS, use the Nix-provided binary instead of Phoenix's downloaded
+# generic Linux executable in _build, which cannot run without patching.
 config :tailwind,
-  version: "4.1.12",
+  version: System.get_env("TAILWIND_VERSION") || "4.1.12",
+  version_check: false,
+  path: System.get_env("TAILWIND_PATH") || System.find_executable("tailwindcss"),
   review_project: [
     args: ~w(
       --input=assets/css/app.css
@@ -59,6 +80,17 @@ config :logger, :default_formatter,
 
 # Use Jason for JSON parsing in Phoenix
 config :phoenix, :json_library, Jason
+
+# Browser/session and room invitation credentials must not enter request logs.
+config :phoenix, :filter_parameters, [
+  "password",
+  "token",
+  "host_token",
+  "invitation",
+  "credential",
+  "secret",
+  "_csrf_token"
+]
 
 # Import environment specific config. This must remain at the bottom
 # of this file so it overrides the configuration defined above.
