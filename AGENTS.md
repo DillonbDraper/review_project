@@ -1,5 +1,13 @@
 This is a web application written using the Phoenix web framework.
 
+## Product scope
+
+- Read [the first release contract](docs/release-contract-v1.md) before planning
+  product work. It is the authoritative release scope and supersedes conflicting
+  assumptions in older plans, research notes, and proposed ADRs.
+- Keep its open decisions distinct from accepted requirements; update the
+  contract when the project owner makes a new product decision.
+
 ## Project guidelines
 
 - Use `mix precommit` alias when you are done with all changes and fix any pending issues
