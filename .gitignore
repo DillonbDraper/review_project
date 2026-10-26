@@ -51,3 +51,5 @@ npm-debug.log
 /.spike-access/
 
 /.nix-data
+
+/priv/media_spikes
