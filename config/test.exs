@@ -1,5 +1,8 @@
 import Config
 
+# Compile and start the real Hologram runtime for endpoint integration tests.
+System.put_env("HOLOGRAM_START", "1")
+
 # Exercise the development-only playback transport in channel tests.
 config :review_project, :youtube_sync_spike, true
 
@@ -15,6 +18,7 @@ config :review_project, ReviewProject.Repo,
   username: "postgres",
   password: "postgres",
   hostname: "localhost",
+  port: String.to_integer(System.get_env("PGPORT", "5432")),
   database: "review_project_test#{System.get_env("MIX_TEST_PARTITION")}",
   pool: Ecto.Adapters.SQL.Sandbox,
   pool_size: System.schedulers_online() * 2

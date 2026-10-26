@@ -50,7 +50,9 @@ config :review_project, ReviewProject.Mailer, adapter: Swoosh.Adapters.Local
 config :esbuild,
   version: System.get_env("ESBUILD_VERSION") || "0.25.4",
   version_check: false,
-  path: System.get_env("ESBUILD_PATH") || System.find_executable("esbuild"),
+  path:
+    System.get_env("MIX_ESBUILD_PATH") || System.get_env("ESBUILD_PATH") ||
+      System.find_executable("esbuild"),
   review_project: [
     args:
       ~w(js/app.js --bundle --target=es2022 --outdir=../priv/static/assets/js --external:/fonts/* --external:/images/* --alias:@=.),
@@ -64,7 +66,9 @@ config :esbuild,
 config :tailwind,
   version: System.get_env("TAILWIND_VERSION") || "4.1.12",
   version_check: false,
-  path: System.get_env("TAILWIND_PATH") || System.find_executable("tailwindcss"),
+  path:
+    System.get_env("MIX_TAILWIND_PATH") || System.get_env("TAILWIND_PATH") ||
+      System.find_executable("tailwindcss"),
   review_project: [
     args: ~w(
       --input=assets/css/app.css

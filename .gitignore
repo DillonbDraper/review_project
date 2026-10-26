@@ -27,6 +27,7 @@ review_project-*.tar
 
 # Ignore assets that are produced by build tools.
 /priv/static/assets/
+/priv/static/hologram/
 
 # Hologram generated JavaScript bundles.
 /priv/static/hologram/

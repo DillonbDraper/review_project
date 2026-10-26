@@ -67,7 +67,7 @@ defmodule ReviewProjectWeb.UsersLive.ConfirmationTest do
       assert Accounts.get_users!(users.id).confirmed_at
       # we are logged in now
       assert get_session(conn, :users_token)
-      assert redirected_to(conn) == ~p"/"
+      assert redirected_to(conn) == "/"
 
       # log out, new conn
       conn = build_conn()

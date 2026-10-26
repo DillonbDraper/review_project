@@ -20,7 +20,7 @@ defmodule ReviewProjectWeb.Router do
   scope "/", ReviewProjectWeb do
     pipe_through :browser
 
-    get "/", PageController, :home
+    # The video workspace at / is handled by Hologram.Router in the endpoint.
   end
 
   # Other scopes may use custom stacks.

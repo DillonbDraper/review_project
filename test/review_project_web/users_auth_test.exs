@@ -25,7 +25,7 @@ defmodule ReviewProjectWeb.UsersAuthTest do
       conn = UsersAuth.log_in_users(conn, users)
       assert token = get_session(conn, :users_token)
       assert get_session(conn, :live_socket_id) == "users_sessions:#{Base.url_encode64(token)}"
-      assert redirected_to(conn) == ~p"/"
+      assert redirected_to(conn) == "/"
       assert Accounts.get_users_by_session_token(token)
     end
 
@@ -120,7 +120,7 @@ defmodule ReviewProjectWeb.UsersAuthTest do
       refute get_session(conn, :users_token)
       refute conn.cookies[@remember_me_cookie]
       assert %{max_age: 0} = conn.resp_cookies[@remember_me_cookie]
-      assert redirected_to(conn) == ~p"/"
+      assert redirected_to(conn) == "/"
       refute Accounts.get_users_by_session_token(users_token)
     end
 
@@ -139,7 +139,7 @@ defmodule ReviewProjectWeb.UsersAuthTest do
       conn = conn |> fetch_cookies() |> UsersAuth.log_out_users()
       refute get_session(conn, :users_token)
       assert %{max_age: 0} = conn.resp_cookies[@remember_me_cookie]
-      assert redirected_to(conn) == ~p"/"
+      assert redirected_to(conn) == "/"
     end
   end
 

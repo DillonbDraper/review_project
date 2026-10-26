@@ -17,7 +17,7 @@ defmodule ReviewProjectWeb.UsersLive.RegistrationTest do
         conn
         |> log_in_users(users_fixture())
         |> live(~p"/users/register")
-        |> follow_redirect(conn, ~p"/")
+        |> follow_redirect(conn, "/")
 
       assert {:ok, _conn} = result
     end

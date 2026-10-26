@@ -5,7 +5,8 @@ config :review_project, ReviewProject.Repo,
   username: "postgres",
   password: "postgres",
   hostname: "localhost",
-  database: "review_project_dev",
+  port: String.to_integer(System.get_env("PGPORT", "5432")),
+  database: System.get_env("PGDATABASE", "review_project_dev"),
   stacktrace: true,
   show_sensitive_data_on_connection_error: true,
   pool_size: 10
@@ -81,7 +82,8 @@ config :review_project, ReviewProjectWeb.Endpoint,
       ~r"priv/gettext/.*\.po$"E,
       # Router, Controllers, LiveViews and LiveComponents
       ~r"lib/review_project_web/router\.ex$"E,
-      ~r"lib/review_project_web/(controllers|live|components)/.*\.(ex|heex)$"E
+      ~r"lib/review_project_web/(controllers|live|components)/.*\.(ex|heex)$"E,
+      ~r"lib/review_project_web/hologram/.*\.(ex|holo)$"E
     ]
   ]
 

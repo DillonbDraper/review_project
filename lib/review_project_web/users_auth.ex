@@ -56,7 +56,7 @@ defmodule ReviewProjectWeb.UsersAuth do
     conn
     |> renew_session(nil)
     |> delete_resp_cookie(@remember_me_cookie, @remember_me_options)
-    |> redirect(to: ~p"/")
+    |> redirect(to: Hologram.Router.Helpers.page_path(ReviewProjectWeb.Hologram.WatchPage))
   end
 
   @doc """
@@ -262,7 +262,8 @@ defmodule ReviewProjectWeb.UsersAuth do
     ~p"/users/settings"
   end
 
-  def signed_in_path(_), do: ~p"/"
+  def signed_in_path(_),
+    do: Hologram.Router.Helpers.page_path(ReviewProjectWeb.Hologram.WatchPage)
 
   @doc """
   Plug for routes that require the users to be authenticated.
