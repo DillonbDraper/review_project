@@ -16,14 +16,14 @@ defmodule ReviewProjectWeb.RoomSpikeSocketTest do
   end
 
   test "only the verified session supplies account scope and guest identity" do
-    user = users_fixture()
-    token = Accounts.generate_users_session_token(user)
-    info = %{session: %{"room_spike_identity" => "server-browser", "users_token" => token}}
+    user = user_fixture()
+    token = Accounts.generate_user_session_token(user)
+    info = %{session: %{"room_spike_identity" => "server-browser", "user_token" => token}}
     assert {:ok, socket} = connect(RoomSpikeSocket, %{"user_id" => 999}, connect_info: info)
-    assert socket.assigns.current_scope.users.id == user.id
+    assert socket.assigns.current_scope.user.id == user.id
     assert socket.assigns.browser_identity == "server-browser"
     assert RoomSpikeSocket.id(socket) == "users_sessions:#{Base.url_encode64(token)}"
-    Accounts.delete_users_session_token(token)
+    Accounts.delete_user_session_token(token)
     assert {:ok, expired} = connect(RoomSpikeSocket, %{}, connect_info: info)
     assert expired.assigns.current_scope == nil
   end

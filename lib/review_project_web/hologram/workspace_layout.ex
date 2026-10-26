@@ -2,6 +2,8 @@ defmodule ReviewProjectWeb.Hologram.WorkspaceLayout do
   @moduledoc "The Hologram document layout for the video workspace."
   use Hologram.Component
 
+  alias ReviewProjectWeb.Hologram.FlashGroup
+
   @impl Component
   def template do
     ~HOLO"""
@@ -18,6 +20,7 @@ defmodule ReviewProjectWeb.Hologram.WorkspaceLayout do
       </head>
       <body class="review-workspace">
         <a href="#workspace" class="skip-link">Skip to workspace</a>
+        <FlashGroup cid="flash-group" />
         <slot />
       </body>
     </html>

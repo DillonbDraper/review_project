@@ -90,8 +90,8 @@ defmodule ReviewProjectWeb.RoomSpikeChannel do
   defp valid_session?(%{assigns: %{current_scope: nil}}), do: true
 
   defp valid_session?(%{assigns: %{current_scope: scope, session_token: token}}) do
-    case Accounts.get_users_by_session_token(token) do
-      {users, _at} -> users.id == scope.users.id
+    case Accounts.get_user_by_session_token(token) do
+      {user, _at} -> user.id == scope.user.id
       _ -> false
     end
   end

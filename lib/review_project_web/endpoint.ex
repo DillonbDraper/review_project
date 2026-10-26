@@ -69,6 +69,7 @@ defmodule ReviewProjectWeb.Endpoint do
   plug Plug.MethodOverride
   plug Plug.Head
   plug Plug.Session, @session_options
+  plug :fetch_remembered_user_token
   plug Hologram.Router
   plug ReviewProjectWeb.Router
 
@@ -80,4 +81,8 @@ defmodule ReviewProjectWeb.Endpoint do
   end
 
   defp hologram_websocket_before_telemetry(conn, _opts), do: conn
+
+  # Hologram.Router serves pages before the router's :browser pipeline.
+  defp fetch_remembered_user_token(conn, opts),
+    do: ReviewProjectWeb.UserAuth.fetch_remembered_user_token(conn, opts)
 end

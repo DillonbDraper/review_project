@@ -9,6 +9,11 @@ config :review_project, :youtube_sync_spike, true
 # Only in tests, remove the complexity from the password hashing algorithm
 config :argon2_elixir, t_cost: 1, m_cost: 8
 
+# Enable log in with Google. Tests never contact Google.
+config :ueberauth, Ueberauth.Strategy.Google.OAuth,
+  client_id: "test-client-id",
+  client_secret: "test-client-secret"
+
 # Configure your database
 #
 # The MIX_TEST_PARTITION environment variable can be used

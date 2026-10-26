@@ -4,8 +4,8 @@ defmodule ReviewProject.OwnershipSpikes.RoomTest do
   alias ReviewProject.OwnershipSpikes.Room
 
   test "ownership comes from the server scope and invitations do not confer ownership" do
-    owner = %Scope{users: %{id: 10}}
-    guest = %Scope{users: %{id: 11}}
+    owner = %Scope{user: %{id: 10}}
+    guest = %Scope{user: %{id: 11}}
     assert {:ok, room} = Room.new(owner, 1000)
     assert room.owner_id == 10
     assert Room.owner?(owner, room)

@@ -24,7 +24,7 @@ defmodule ReviewProjectWeb.RoomSpikeController do
       redirect(conn, to: return_to)
     else
       conn
-      |> put_session(:users_return_to, return_to)
+      |> put_session(:user_return_to, return_to)
       |> redirect(to: "/users/log-in")
     end
   end
@@ -35,7 +35,7 @@ defmodule ReviewProjectWeb.RoomSpikeController do
         do: conn,
         else: put_session(conn, :room_spike_identity, Ecto.UUID.generate())
 
-    email = if conn.assigns.current_scope, do: conn.assigns.current_scope.users.email
+    email = if conn.assigns.current_scope, do: conn.assigns.current_scope.user.email
 
     conn
     |> put_resp_header("cache-control", "no-store")

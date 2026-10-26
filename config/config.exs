@@ -8,16 +8,16 @@
 import Config
 
 config :review_project, :scopes,
-  users: [
+  user: [
     default: true,
     module: ReviewProject.Accounts.Scope,
     assign_key: :current_scope,
-    access_path: [:users, :id],
-    schema_key: :users_id,
+    access_path: [:user, :id],
+    schema_key: :user_id,
     schema_type: :id,
     schema_table: :users,
     test_data_fixture: ReviewProject.AccountsFixtures,
-    test_setup_helper: :register_and_log_in_users
+    test_setup_helper: :register_and_log_in_user
   ]
 
 config :review_project,
@@ -43,6 +43,18 @@ config :review_project, ReviewProjectWeb.Endpoint,
 # For production it's recommended to configure a different adapter
 # at the `config/runtime.exs`.
 config :review_project, ReviewProject.Mailer, adapter: Swoosh.Adapters.Local
+
+# Configure log in with Google. The OAuth client credentials are read
+# from the environment in config/runtime.exs.
+config :ueberauth, Ueberauth,
+  base_path: "/users/auth",
+  providers: [
+    google: {Ueberauth.Strategy.Google, [default_scope: "email", prompt: "select_account"]}
+  ]
+
+# Make OAuth2 requests with Mint, which verifies TLS certificates by
+# default, instead of the :httpc adapter.
+config :oauth2, adapter: Tesla.Adapter.Mint
 
 # Configure esbuild (the version is required)
 # On NixOS, use the Nix-provided binary instead of Phoenix's downloaded
@@ -85,7 +97,8 @@ config :logger, :default_formatter,
 # Use Jason for JSON parsing in Phoenix
 config :phoenix, :json_library, Jason
 
-# Browser/session and room invitation credentials must not enter request logs.
+# Browser/session and room invitation credentials, and the OAuth
+# authorization codes from log in with Google, must not enter request logs.
 config :phoenix, :filter_parameters, [
   "password",
   "token",
@@ -93,7 +106,8 @@ config :phoenix, :filter_parameters, [
   "invitation",
   "credential",
   "secret",
-  "_csrf_token"
+  "_csrf_token",
+  "code"
 ]
 
 # Import environment specific config. This must remain at the bottom

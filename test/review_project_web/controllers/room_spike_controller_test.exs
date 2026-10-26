@@ -7,7 +7,7 @@ defmodule ReviewProjectWeb.RoomSpikeControllerTest do
     destination = "/dev/spikes/room-access/room/room-id/invitation-token?ice=relay-tls"
     conn = get(conn, "/dev/spikes/room-access/sign-in", return_to: destination)
     assert redirected_to(conn) == "/users/log-in"
-    assert get_session(conn, :users_return_to) == destination
+    assert get_session(conn, :user_return_to) == destination
   end
 
   test "sign-in defaults to this spike and rejects unrelated or external destinations", %{
@@ -26,7 +26,7 @@ defmodule ReviewProjectWeb.RoomSpikeControllerTest do
       params = if destination, do: %{return_to: destination}, else: %{}
       response = get(conn, "/dev/spikes/room-access/sign-in", params)
       assert redirected_to(response) == "/users/log-in"
-      assert get_session(response, :users_return_to) == "/dev/spikes/room-access"
+      assert get_session(response, :user_return_to) == "/dev/spikes/room-access"
     end
   end
 
@@ -35,7 +35,7 @@ defmodule ReviewProjectWeb.RoomSpikeControllerTest do
 
     conn =
       conn
-      |> log_in_users(users_fixture())
+      |> log_in_user(user_fixture())
       |> get("/dev/spikes/room-access/sign-in", return_to: destination)
 
     assert redirected_to(conn) == destination
@@ -44,14 +44,14 @@ defmodule ReviewProjectWeb.RoomSpikeControllerTest do
   test "password login returns to the spike and its bootstrap recognizes the account", %{
     conn: conn
   } do
-    user = users_fixture() |> set_password()
+    user = user_fixture() |> set_password()
     conn = get(conn, "/dev/spikes/room-access/sign-in")
 
     conn =
       conn
       |> recycle()
       |> post("/users/log-in", %{
-        "users" => %{"email" => user.email, "password" => valid_users_password()}
+        "user" => %{"email" => user.email, "password" => valid_user_password()}
       })
 
     assert redirected_to(conn) == "/dev/spikes/room-access"
@@ -66,15 +66,15 @@ defmodule ReviewProjectWeb.RoomSpikeControllerTest do
   end
 
   test "email confirmation returns a newly registered owner to the invitation", %{conn: conn} do
-    user = unconfirmed_users_fixture()
-    {token, _} = generate_users_magic_link_token(user)
+    user = unconfirmed_user_fixture()
+    {token, _} = generate_user_magic_link_token(user)
     destination = "/dev/spikes/room-access/room/room-id/invitation-token?ice=auto"
     conn = get(conn, "/dev/spikes/room-access/sign-in", return_to: destination)
 
     conn =
       conn
       |> recycle()
-      |> post("/users/log-in?_action=confirmed", %{"users" => %{"token" => token}})
+      |> post("/users/log-in?_action=confirmed", %{"user" => %{"token" => token}})
 
     assert redirected_to(conn) == destination
     conn = conn |> recycle() |> get("/dev/spikes/room-access/session")
@@ -101,8 +101,8 @@ defmodule ReviewProjectWeb.RoomSpikeControllerTest do
     conn: conn
   } do
     rooms = start_supervised!({Rooms, []})
-    user = users_fixture()
-    conn = conn |> log_in_users(user) |> post("/dev/spikes/room-access/rooms", %{owner_id: 999})
+    user = user_fixture()
+    conn = conn |> log_in_user(user) |> post("/dev/spikes/room-access/rooms", %{owner_id: 999})
     assert %{"room_id" => id, "invitation" => invitation} = json_response(conn, 200)
     assert is_binary(invitation)
     assert :sys.get_state(rooms).rooms[id].owner_id == user.id

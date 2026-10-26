@@ -1,4 +1,4 @@
-defmodule ReviewProjectWeb.UsersLive.LoginTest do
+defmodule ReviewProjectWeb.UserLive.LoginTest do
   use ReviewProjectWeb.ConnCase, async: true
 
   import Phoenix.LiveViewTest
@@ -12,30 +12,36 @@ defmodule ReviewProjectWeb.UsersLive.LoginTest do
       assert html =~ "Sign up"
       assert html =~ "Log in with email"
     end
+
+    test "links to log in with Google", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/users/log-in")
+
+      assert has_element?(lv, ~s|#google-log-in[href="/users/auth/google"]|)
+    end
   end
 
-  describe "users login - magic link" do
-    test "sends magic link email when users exists", %{conn: conn} do
-      users = users_fixture()
+  describe "user login - magic link" do
+    test "sends magic link email when user exists", %{conn: conn} do
+      user = user_fixture()
 
       {:ok, lv, _html} = live(conn, ~p"/users/log-in")
 
       {:ok, _lv, html} =
-        form(lv, "#login_form_magic", users: %{email: users.email})
+        form(lv, "#login_form_magic", user: %{email: user.email})
         |> render_submit()
         |> follow_redirect(conn, ~p"/users/log-in")
 
       assert html =~ "If your email is in our system"
 
-      assert ReviewProject.Repo.get_by!(ReviewProject.Accounts.UsersToken, users_id: users.id).context ==
+      assert ReviewProject.Repo.get_by!(ReviewProject.Accounts.UserToken, user_id: user.id).context ==
                "login"
     end
 
-    test "does not disclose if users is registered", %{conn: conn} do
+    test "does not disclose if user is registered", %{conn: conn} do
       {:ok, lv, _html} = live(conn, ~p"/users/log-in")
 
       {:ok, _lv, html} =
-        form(lv, "#login_form_magic", users: %{email: "idonotexist@example.com"})
+        form(lv, "#login_form_magic", user: %{email: "idonotexist@example.com"})
         |> render_submit()
         |> follow_redirect(conn, ~p"/users/log-in")
 
@@ -43,15 +49,15 @@ defmodule ReviewProjectWeb.UsersLive.LoginTest do
     end
   end
 
-  describe "users login - password" do
-    test "redirects if users logs in with valid credentials", %{conn: conn} do
-      users = users_fixture() |> set_password()
+  describe "user login - password" do
+    test "redirects if user logs in with valid credentials", %{conn: conn} do
+      user = user_fixture() |> set_password()
 
       {:ok, lv, _html} = live(conn, ~p"/users/log-in")
 
       form =
         form(lv, "#login_form_password",
-          users: %{email: users.email, password: valid_users_password(), remember_me: true}
+          user: %{email: user.email, password: valid_user_password(), remember_me: true}
         )
 
       conn = submit_form(form, conn)
@@ -65,7 +71,7 @@ defmodule ReviewProjectWeb.UsersLive.LoginTest do
       {:ok, lv, _html} = live(conn, ~p"/users/log-in")
 
       form =
-        form(lv, "#login_form_password", users: %{email: "test@email.com", password: "123456"})
+        form(lv, "#login_form_password", user: %{email: "test@email.com", password: "123456"})
 
       render_submit(form, %{user: %{remember_me: true}})
 
@@ -91,11 +97,11 @@ defmodule ReviewProjectWeb.UsersLive.LoginTest do
 
   describe "re-authentication (sudo mode)" do
     setup %{conn: conn} do
-      users = users_fixture()
-      %{users: users, conn: log_in_users(conn, users)}
+      user = user_fixture()
+      %{user: user, conn: log_in_user(conn, user)}
     end
 
-    test "shows login page with email filled in", %{conn: conn, users: users} do
+    test "shows login page with email filled in", %{conn: conn, user: user} do
       {:ok, _lv, html} = live(conn, ~p"/users/log-in")
 
       assert html =~ "You need to reauthenticate"
@@ -103,7 +109,7 @@ defmodule ReviewProjectWeb.UsersLive.LoginTest do
       assert html =~ "Log in with email"
 
       assert html =~
-               ~s(<input type="email" name="users[email]" id="login_form_magic_email" value="#{users.email}")
+               ~s(<input type="email" name="user[email]" id="login_form_magic_email" value="#{user.email}")
     end
   end
 end

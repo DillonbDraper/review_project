@@ -7,7 +7,7 @@ defmodule ReviewProject.OwnershipSpikes.RoomsTest do
     clock = :atomics.new(1, [])
     :atomics.put(clock, 1, 1000)
     rooms = start_supervised!({Rooms, name: nil, clock: fn -> :atomics.get(clock, 1) end})
-    scope = %Scope{users: %{id: 123}}
+    scope = %Scope{user: %{id: 123}}
     {:ok, room} = Rooms.create(scope, rooms)
     host = peer()
     {:ok, reply} = join(%{rooms: rooms, room: room}, scope, "host-browser", host)

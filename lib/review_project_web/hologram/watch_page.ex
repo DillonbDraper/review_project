@@ -2,10 +2,19 @@ defmodule ReviewProjectWeb.Hologram.WatchPage do
   @moduledoc "Video review scaffold with independently owned player, chat, and whiteboard."
   use Hologram.Page
 
-  alias ReviewProjectWeb.Hologram.{ChatPanel, VideoPanel, WhiteboardPanel, WorkspaceLayout}
+  alias ReviewProjectWeb.Hologram.{
+    AccountMenu,
+    ChatPanel,
+    UserAuth,
+    VideoPanel,
+    WhiteboardPanel,
+    WorkspaceLayout
+  }
 
   route "/"
   layout WorkspaceLayout
+
+  middleware UserAuth, :mount_current_scope
 
   @impl Page
   def template do
@@ -16,7 +25,10 @@ defmodule ReviewProjectWeb.Hologram.WatchPage do
           <span class="brand-mark" aria-hidden="true">r.</span>
           review<span class="wordmark-divider" aria-hidden="true"></span><span class="wordmark-label">Workspace</span>
         </a>
-        <span class="session-badge"><span class="status-dot" aria-hidden="true"></span>Local session</span>
+        <div class="workspace-header-actions">
+          <span class="session-badge"><span class="status-dot" aria-hidden="true"></span>Local session</span>
+          <AccountMenu cid="account-menu" />
+        </div>
       </div>
     </header>
 

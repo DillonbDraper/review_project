@@ -3,7 +3,7 @@ defmodule ReviewProject.OwnershipSpikes.Room do
   alias ReviewProject.Accounts.Scope
   alias ReviewProject.SyncSpikes.Timeline
 
-  def new(%Scope{users: %{id: owner_id}}, now) do
+  def new(%Scope{user: %{id: owner_id}}, now) do
     {:ok,
      %{
        id: Ecto.UUID.generate(),
@@ -23,7 +23,7 @@ defmodule ReviewProject.OwnershipSpikes.Room do
 
   def new(_scope, _now), do: {:error, :authentication_required}
 
-  def owner?(%Scope{users: %{id: id}}, room), do: id == room.owner_id
+  def owner?(%Scope{user: %{id: id}}, room), do: id == room.owner_id
   def owner?(_scope, _room), do: false
 
   def invited?(room, token) when is_binary(token),

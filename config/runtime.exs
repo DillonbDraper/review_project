@@ -23,6 +23,14 @@ end
 config :review_project, ReviewProjectWeb.Endpoint,
   http: [port: String.to_integer(System.get_env("PORT", "4000"))]
 
+# Log in with Google is enabled when its OAuth client credentials are set.
+# Tests use the fixed credentials from config/test.exs instead.
+if config_env() != :test and System.get_env("GOOGLE_CLIENT_ID") do
+  config :ueberauth, Ueberauth.Strategy.Google.OAuth,
+    client_id: System.fetch_env!("GOOGLE_CLIENT_ID"),
+    client_secret: System.fetch_env!("GOOGLE_CLIENT_SECRET")
+end
+
 # Opt-in development spike. Never put the shared secret into browser assets.
 if config_env() == :dev and System.get_env("TURN_SPIKE_CONFIG") do
   turn = System.fetch_env!("TURN_SPIKE_CONFIG") |> File.read!() |> Jason.decode!()

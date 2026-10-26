@@ -8,9 +8,9 @@ defmodule ReviewProjectWeb.RoomSpikeChannelTest do
 
   setup do
     rooms = start_supervised!({Rooms, name: nil})
-    owner = users_fixture()
-    scope = Scope.for_users(owner)
-    token = Accounts.generate_users_session_token(owner)
+    owner = user_fixture()
+    scope = Scope.for_user(owner)
+    token = Accounts.generate_user_session_token(owner)
     {:ok, room} = Rooms.create(scope, rooms)
     %{rooms: rooms, scope: scope, token: token, room: room}
   end
@@ -22,7 +22,7 @@ defmodule ReviewProjectWeb.RoomSpikeChannelTest do
     assert {:error, %{reason: :invalid_invitation}} =
              join_room(ctx, nil, nil, "forged", %{
                host_token: ctx.room.invitation,
-               user_id: ctx.scope.users.id,
+               user_id: ctx.scope.user.id,
                display_name: "Fake host"
              })
 
@@ -41,7 +41,7 @@ defmodule ReviewProjectWeb.RoomSpikeChannelTest do
 
   test "revoked owner sessions cannot keep controlling through an existing channel", ctx do
     {:ok, reply, host} = join_room(ctx, ctx.scope, ctx.token, "owner", %{})
-    Accounts.delete_users_session_token(ctx.token)
+    Accounts.delete_user_session_token(ctx.token)
 
     ref =
       push(host, "control", %{

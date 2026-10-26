@@ -11,11 +11,11 @@ defmodule ReviewProjectWeb.RoomSpikeSocket do
   def connect(_params, socket, %{session: %{"room_spike_identity" => identity} = session})
       when is_binary(identity) do
     if Application.get_env(:review_project, :youtube_sync_spike, false) do
-      token = session["users_token"]
+      token = session["user_token"]
 
       scope =
-        case token && Accounts.get_users_by_session_token(token) do
-          {users, _inserted_at} -> Scope.for_users(users)
+        case token && Accounts.get_user_by_session_token(token) do
+          {user, _inserted_at} -> Scope.for_user(user)
           _ -> nil
         end
 
