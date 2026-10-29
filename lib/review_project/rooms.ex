@@ -59,8 +59,8 @@ defmodule ReviewProject.Rooms do
     do: request(current_scope, room_id, {:chat, attrs}, member)
 
   @doc "History for an authenticated owner, including closed rooms. Guests use joined requests."
-  def list_messages(current_scope, room_id, opts \\ []) do
-    with {:ok, room} <- get_room(current_scope, room_id), do: Store.history(room.id, opts)
+  def list_messages(current_scope, room_id) do
+    with {:ok, room} <- get_room(current_scope, room_id), do: Store.history(room.id)
   end
 
   defp ensure_session(room_id) do

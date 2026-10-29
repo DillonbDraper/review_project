@@ -219,7 +219,7 @@ defmodule ReviewProject.Rooms.SessionTest do
              new_guest.reply.messages
 
     assert {:ok, [stored]} =
-             Session.request(ctx.session, nil, new_guest.pid, {:history, [limit: 1]})
+             Session.request(ctx.session, nil, new_guest.pid, :history)
 
     assert stored.id == message.id
   end
@@ -246,7 +246,7 @@ defmodule ReviewProject.Rooms.SessionTest do
     first = guest(ctx)
     assert {:ok, %{}} = Session.request(ctx.session, nil, first.pid, :leave)
     refute Repo.get(Seat, first.reply.self_id)
-    assert {:error, :not_joined} = Session.request(ctx.session, nil, first.pid, {:history, []})
+    assert {:error, :not_joined} = Session.request(ctx.session, nil, first.pid, :history)
 
     assert {:error, :not_joined} =
              Session.request(ctx.session, nil, first.pid, {:chat, %{body: "No"}})

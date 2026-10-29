@@ -1,0 +1,98 @@
+defmodule ReviewProjectWeb.RoomChannel do
+  @moduledoc "Live room admission, durable chat and membership lifecycle."
+  use Phoenix.Channel
+
+  alias ReviewProject.Rooms
+  alias ReviewProjectWeb.{RoomErrors, RoomSocket}
+
+  @impl true
+  def join("room:" <> room_id, params, socket) do
+    with true <- RoomSocket.valid_session?(socket),
+         {:ok, room_id} <- Ecto.UUID.cast(room_id),
+         {:ok, reply} <-
+           Rooms.join_room(
+             socket.assigns.current_scope,
+             room_id,
+             socket.assigns.browser_identity,
+             params["invitation"],
+             params["display_name"]
+           ),
+         [{coordinator, _}] <- Registry.lookup(ReviewProject.Rooms.Registry, room_id) do
+      ref = Process.monitor(coordinator)
+
+      # A coordinator can restart between admission and monitoring. The epoch
+      # check makes sure this channel is bound to the process it actually joined.
+      case Rooms.request(socket.assigns.current_scope, room_id, :snapshot) do
+        {:ok, %{epoch: epoch}} when epoch == reply.snapshot.epoch ->
+          {:ok, Map.take(reply, [:self_id, :snapshot, :messages]),
+           assign(socket, room_id: room_id, coordinator_ref: ref)}
+
+        _ ->
+          {:error, %{reason: "not_joined"}}
+      end
+    else
+      false -> {:error, %{reason: "session_expired"}}
+      {:error, reason} -> {:error, RoomErrors.payload(reason)}
+      [] -> {:error, %{reason: "not_joined"}}
+      :error -> {:error, %{reason: "not_found"}}
+    end
+  end
+
+  @impl true
+  def handle_in(event, params, socket) do
+    if RoomSocket.valid_session?(socket) do
+      result =
+        case {event, params} do
+          {"snapshot", _} ->
+            Rooms.request(socket.assigns.current_scope, socket.assigns.room_id, :snapshot)
+
+          {"leave", _} ->
+            Rooms.request(socket.assigns.current_scope, socket.assigns.room_id, :leave)
+
+          {"chat_send", %{"body" => body}} when is_binary(body) ->
+            Rooms.send_message(socket.assigns.current_scope, socket.assigns.room_id, %{body: body})
+
+          {"chat_history", params} when is_map(params) ->
+            Rooms.request(socket.assigns.current_scope, socket.assigns.room_id, :history)
+
+          _ ->
+            {:error, :invalid_operation}
+        end
+
+      case result do
+        {:ok, reply} -> {:reply, {:ok, reply}, socket}
+        {:error, reason} -> {:reply, {:error, RoomErrors.payload(reason)}, socket}
+      end
+    else
+      push(socket, "room_ended", %{reason: "session_expired"})
+      {:stop, :normal, {:error, %{reason: "session_expired"}}, socket}
+    end
+  end
+
+  @impl true
+  def handle_info({:room_state, snapshot}, socket) do
+    push(socket, "room_state", snapshot)
+    {:noreply, socket}
+  end
+
+  def handle_info({:room_chat_message, message}, socket) do
+    push(socket, "chat_message", message)
+    {:noreply, socket}
+  end
+
+  def handle_info({event, payload}, socket)
+      when event in [:room_seat_replaced, :room_left, :room_closed] do
+    push(socket, "room_ended", RoomErrors.payload(payload.reason))
+    {:stop, :normal, socket}
+  end
+
+  def handle_info(
+        {:DOWN, ref, :process, _pid, _reason},
+        %{assigns: %{coordinator_ref: ref}} = socket
+      ) do
+    push(socket, "room_restart", %{})
+    {:stop, :normal, socket}
+  end
+
+  def handle_info({_event, _payload}, socket), do: {:noreply, socket}
+end

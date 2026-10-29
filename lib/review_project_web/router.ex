@@ -21,6 +21,8 @@ defmodule ReviewProjectWeb.Router do
     pipe_through :browser
 
     # The video workspace at / is handled by Hologram.Router in the endpoint.
+    get "/room-session", RoomController, :session
+    get "/room-sign-in", RoomController, :sign_in
   end
 
   # Other scopes may use custom stacks.

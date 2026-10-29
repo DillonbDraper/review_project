@@ -5,6 +5,7 @@ defmodule ReviewProjectWeb.Hologram.WatchPage do
   alias ReviewProjectWeb.Hologram.{
     AccountMenu,
     ChatPanel,
+    RoomPanel,
     UserAuth,
     VideoPanel,
     WhiteboardPanel,
@@ -17,6 +18,9 @@ defmodule ReviewProjectWeb.Hologram.WatchPage do
   middleware UserAuth, :mount_current_scope
 
   @impl Page
+  def init(_params, component, _server), do: put_state(component, room_id: "")
+
+  @impl Page
   def template do
     ~HOLO"""
     <header class="workspace-header">
@@ -26,7 +30,7 @@ defmodule ReviewProjectWeb.Hologram.WatchPage do
           review<span class="wordmark-divider" aria-hidden="true"></span><span class="wordmark-label">Workspace</span>
         </a>
         <div class="workspace-header-actions">
-          <span class="session-badge"><span class="status-dot" aria-hidden="true"></span>Local session</span>
+          <span class="session-badge"><span class="status-dot" aria-hidden="true"></span>{%if @room_id == ""}Your workspace{%else}Room workspace{/if}</span>
           <AccountMenu cid="account-menu" />
         </div>
       </div>
@@ -39,8 +43,9 @@ defmodule ReviewProjectWeb.Hologram.WatchPage do
           <h1>Watch. Discuss. Make room for ideas.</h1>
           <p class="intro-description">Bring a video, collect your thoughts, and keep the conversation in view.</p>
         </div>
-        <span class="workspace-label">YOUR REVIEW ROOM <span aria-hidden="true">01</span></span>
       </div>
+
+      <RoomPanel cid="room-controls" room_id={@room_id} />
 
       <div class="workspace-grid">
         <VideoPanel cid="video-panel" />

@@ -39,6 +39,15 @@ provide historical context and do not override these decisions.
 5. A session is not ended because it reaches an elapsed-time allowance. Empty-room
    expiry and resource cleanup are separate lifecycle decisions still to be made.
 
+Room creation begins in a modal on the main page. Invitations are shareable links
+that people can distribute however they like; built-in invitation delivery is
+not required. This entry flow was selected by the project owner on 2026-10-28.
+
+Room chat loads the full stored conversation on entry and rejoin, without
+manual pagination or a displayed-message cap. Incoming messages preserve the
+reader's position when they have scrolled up. This presentation was selected by
+the project owner on 2026-10-29; chat retention and storage remain open decisions.
+
 YouTube playback should use the supported embedded player. YouTube content that
 is unavailable or disallows embedding may fail with an appropriate explanation;
 the release does not promise playback of every YouTube URL. Downloading,

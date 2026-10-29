@@ -15,7 +15,7 @@ defmodule ReviewProject.Rooms.ContextTest do
     assert message.sender_seat_id == id
     assert {:ok, [stored]} = Rooms.list_messages(scope, room.id)
     assert stored.id == message.id
-    assert {:ok, [public]} = Rooms.request(nil, room.id, {:history, []})
+    assert {:ok, [public]} = Rooms.request(nil, room.id, :history)
     assert public.id == message.id
     ref = Process.monitor(session)
     assert {:ok, _} = Rooms.close_room(scope, room.id)

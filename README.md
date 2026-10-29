@@ -4,12 +4,69 @@ The [first release contract](docs/release-contract-v1.md) is the authoritative
 product scope. Read it before planning features or interpreting older research
 and architecture notes.
 
+The [rooms/UI integration plan](docs/rooms-ui-integration-plan.md) records the
+current wiring gaps, local setup prerequisites, and staged delivery of real rooms,
+shared chat, synchronized playback, and conferencing in the workspace.
+
 To start your Phoenix server:
 
 * Run `mix setup` to install and setup dependencies
 * Start Phoenix endpoint with `mix phx.server` or inside IEx with `iex -S mix phx.server`
 
 Now you can visit [`localhost:4000`](http://localhost:4000) from your browser.
+
+## Create a room and invite people
+
+Use the tracked Nix environment to supply the native libraries and asset tools:
+
+```sh
+nix develop
+dbstart
+mix setup
+mix holo
+```
+
+At `/`, choose **Create a room**. Sign in first (or register and open the
+confirmation email at `/dev/mailbox`), then enter a room name and your display
+name. The room opens with an invitation link you can copy and share anywhere.
+Guests open the link, choose a display name, and join without an account. Use a
+different browser/profile to try a separate guest: tabs in one browser share a
+seat. **Leave room** releases a guest seat immediately.
+
+The home page lists your recent open rooms. Reopening one uses your signed-in
+ownership; if this tab no longer has its invitation, **Invite people** offers an
+explicit replacement link. Replacement affects future joins; connected guests
+stay admitted. Links are kept in tab session storage, and their credential is in
+the URL fragment rather than the HTTP request path.
+
+Room chat is shared with everyone currently joined. Messages use server-assigned
+names and ordering, and the full conversation returns on reload/rejoin. Sending
+is disabled while disconnected, and an unsent draft is kept.
+Messages appear in one continuous scrollable conversation, without paging or a
+display limit. New arrivals preserve your position when you are reading above.
+Video playback remains local.
+
+For a second computer on your home network, follow the
+[home-network chat guide](docs/home-network-chat.md). Use the same trusted HTTPS
+LAN address on the host and guest so invitation links work on both computers.
+
+Run the room browser check with a development server and an isolated Chrome
+debugging instance as described below:
+
+```sh
+node scripts/rooms_browser_test.mjs
+```
+
+It creates a synthetic local account and room using `/dev/mailbox`, so use a
+disposable development database. `APP_URL` and `CHROME_DEBUG_URL` override the
+default `http://localhost:4000` and `http://127.0.0.1:9222`. The check exercises
+the creation modal, invitation admission, shared chat, full history, socket
+reconnection, draft recovery, live roster, tab replacement, explicit leave, and
+invalid-link feedback. Room lifecycle and client delivery/history behavior are written in Elixir/Hologram
+and covered by `mix precommit`; JavaScript only adapts browser APIs and the Phoenix
+channel transport. Run checks before starting
+the development server: Hologram dev/test builds share generated asset paths;
+restart `mix holo` after running `mix precommit` to refresh development bundles.
 
 ## Hologram development and checks
 

@@ -225,27 +225,15 @@ defmodule ReviewProject.Rooms.Store do
     end)
   end
 
-  def history(id, opts \\ []) do
-    limit = Keyword.get(opts, :limit, 50)
-    before_sequence = Keyword.get(opts, :before_sequence)
-
-    if is_integer(limit) and limit in 1..100 and
-         (is_nil(before_sequence) or (is_integer(before_sequence) and before_sequence > 0)) do
-      query =
+  def history(id) do
+    messages =
+      Repo.all(
         from m in ChatRoomMessage,
           where: m.room_id == ^id,
-          order_by: [desc: m.sequence],
-          limit: ^limit
+          order_by: [asc: m.sequence]
+      )
 
-      query =
-        if before_sequence,
-          do: from(m in query, where: m.sequence < ^before_sequence),
-          else: query
-
-      {:ok, query |> Repo.all() |> Enum.reverse()}
-    else
-      {:error, :invalid_pagination}
-    end
+    {:ok, messages}
   end
 
   defp new_guest!(room, seats, digest) do

@@ -15,6 +15,10 @@ defmodule ReviewProjectWeb.Endpoint do
     websocket: [connect_info: [session: @session_options]],
     longpoll: [connect_info: [session: @session_options]]
 
+  socket "/room-socket", ReviewProjectWeb.RoomSocket,
+    websocket: [connect_info: [session: @session_options]],
+    longpoll: false
+
   # Phase 0 spike: raw membrane_webrtc_plugin signaling over a plain Phoenix
   # socket (no LiveView), used by the Hologram WebRTC integration spike so the
   # Hologram-owned browser PeerConnection can negotiate with Membrane Source/Sink.

@@ -157,24 +157,19 @@ defmodule ReviewProject.Rooms.StoreTest do
     assert stored.sender_display_name == "Guest"
   end
 
-  test "history uses bounded keyset pagination in chronological order" do
+  test "history returns the whole conversation in chronological order" do
     %{scope: scope, room: room} = room_fixture()
     {:ok, %{seat: seat}} = Store.admit(scope, room.id, nil, nil, "Host", now())
 
-    for i <- 1..5,
-        do:
-          Store.append_message(room.id, seat.id, seat.connection_generation, %{
-            body: "Message #{i}"
-          })
+    for i <- 1..300 do
+      assert {:ok, _} =
+               Store.append_message(room.id, seat.id, seat.connection_generation, %{
+                 body: "Message #{i}"
+               })
+    end
 
-    assert {:ok, messages} = Rooms.list_messages(scope, room.id, limit: 2)
-    assert Enum.map(messages, & &1.sequence) == [4, 5]
-    assert {:ok, messages} = Rooms.list_messages(scope, room.id, limit: 2, before_sequence: 4)
-    assert Enum.map(messages, & &1.sequence) == [2, 3]
-    assert {:error, :invalid_pagination} = Rooms.list_messages(scope, room.id, limit: 101)
-
-    assert {:error, :invalid_pagination} =
-             Rooms.list_messages(scope, room.id, before_sequence: "bad")
+    assert {:ok, messages} = Rooms.list_messages(scope, room.id)
+    assert Enum.map(messages, & &1.sequence) == Enum.to_list(1..300)
   end
 
   test "closure preserves history and blocks admission, chat and invitation replacement" do

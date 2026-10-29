@@ -192,14 +192,9 @@ defmodule ReviewProject.Rooms.Session do
   defp operate(:snapshot, _id, _member, state),
     do: {:reply, {:ok, snapshot(state)}, state}
 
-  defp operate({:history, opts}, _id, _member, state) when is_list(opts) do
-    result =
-      case Store.history(state.room.id, opts) do
-        {:ok, messages} -> {:ok, Enum.map(messages, &public_message/1)}
-        error -> error
-      end
-
-    {:reply, result, state}
+  defp operate(:history, _id, _member, state) do
+    {:ok, messages} = Store.history(state.room.id)
+    {:reply, {:ok, Enum.map(messages, &public_message/1)}, state}
   end
 
   defp operate({:chat, attrs}, id, member, state) when is_map(attrs) do
@@ -357,6 +352,7 @@ defmodule ReviewProject.Rooms.Session do
     Timeline.snapshot(state.timeline, state.clock.())
     |> Map.merge(%{
       room_id: state.room.id,
+      room_name: state.room.name,
       epoch: state.epoch,
       authority_revision: state.authority_revision,
       controller_id: state.controller_id,
