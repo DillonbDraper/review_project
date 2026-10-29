@@ -5,6 +5,14 @@ defmodule ReviewProjectWeb.Hologram.WorkspaceLayout do
   alias ReviewProjectWeb.Hologram.FlashGroup
 
   @impl Component
+  def init(_props, component, server) do
+    # Follow Phoenix's manifest configuration instead of Hologram's preference
+    # for any fingerprinted file left in priv/static by a production build.
+    stylesheet_path = ReviewProjectWeb.Endpoint.static_path("/assets/css/app.css")
+    {put_state(component, :stylesheet_path, stylesheet_path), server}
+  end
+
+  @impl Component
   def template do
     ~HOLO"""
     <!DOCTYPE html>
@@ -15,7 +23,7 @@ defmodule ReviewProjectWeb.Hologram.WorkspaceLayout do
         <meta name="description" content="A focused workspace for watching videos, collecting thoughts, and making room for ideas." />
         <meta name="referrer" content="strict-origin-when-cross-origin" />
         <title>Video workspace · Review</title>
-        <link rel="stylesheet" href={asset_path("assets/css/app.css")} />
+        <link rel="stylesheet" href={@stylesheet_path} />
         <Hologram.UI.Runtime />
       </head>
       <body class="review-workspace">
