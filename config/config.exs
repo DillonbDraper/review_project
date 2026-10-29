@@ -107,7 +107,8 @@ config :phoenix, :filter_parameters, [
   "credential",
   "secret",
   "_csrf_token",
-  "code"
+  "code",
+  "browser_identity"
 ]
 
 # Import environment specific config. This must remain at the bottom

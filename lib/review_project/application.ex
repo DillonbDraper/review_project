@@ -12,6 +12,7 @@ defmodule ReviewProject.Application do
       ReviewProject.Repo,
       {DNSCluster, query: Application.get_env(:review_project, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: ReviewProject.PubSub},
+      ReviewProject.Rooms.Supervisor,
       # Start a worker by calling: ReviewProject.Worker.start_link(arg)
       # {ReviewProject.Worker, arg},
       # Start to serve requests, typically the last entry
