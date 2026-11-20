@@ -48,6 +48,23 @@ manual pagination or a displayed-message cap. Incoming messages preserve the
 reader's position when they have scrolled up. This presentation was selected by
 the project owner on 2026-10-29; chat retention and storage remain open decisions.
 
+Conferencing must allow joining with camera and microphone, microphone only,
+camera only, or neither. Missing, unavailable, or denied camera/microphone access
+must not prevent room admission or receiving other participants' media. Joined
+participants appear above the main video review section in separate square
+tiles; a participant without video has a black tile. These requirements were
+selected by the project owner on 2026-10-29. The immediate conferencing work
+focuses on connecting participants; host controls for removing or muting others
+are deferred. See the [conferencing implementation plan](conferencing-plan.md)
+for proposed integration and verification steps, rather than additional agreed
+product requirements.
+
+After a brief signaling outage, the same page releases capture immediately and
+automatically reacquires previously enabled camera/microphone after rejoining.
+Device permission failures leave that device off with a retry action. Fresh page
+loads, navigation, explicit leave, replacement, and logout start with devices
+off. This recovery preference was selected by the project owner on 2026-10-30.
+
 YouTube playback should use the supported embedded player. YouTube content that
 is unavailable or disallows embedding may fail with an appropriate explanation;
 the release does not promise playback of every YouTube URL. Downloading,
@@ -60,6 +77,7 @@ scraping, or rehosting YouTube media is outside this contract.
 - Drawing and annotation features.
 - Session recording, recording exports, and screen-capture features.
 - Mobile browser support.
+- Host conferencing moderation controls, including removing or muting others.
 
 Chat belongs in every tier, including free. The exclusion of recording does not
 settle chat retention or storage policy; that remains an open decision.
@@ -75,7 +93,8 @@ here.
 These details need explicit decisions before their dependent implementation;
 they must not be treated as already agreed:
 
-- Guest removal rules and identity continuity across different browsers/devices.
+- Guest removal rules, when moderation is introduced, and identity continuity
+  across different browsers/devices.
 - Empty-room expiry, room persistence, and resource cleanup.
 - Chat retention and storage.
 - The scope of YouTube playlists, live videos, and other player edge cases.

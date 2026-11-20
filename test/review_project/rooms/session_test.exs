@@ -252,20 +252,45 @@ defmodule ReviewProject.Rooms.SessionTest do
              Session.request(ctx.session, nil, first.pid, {:chat, %{body: "No"}})
   end
 
-  test "signaling only reaches connected media-enabled seats in this room", ctx do
+  test "signaling reaches conference-ready seats without local devices", ctx do
     first = guest(ctx)
     second = guest(ctx)
 
     signal = %{
+      "epoch" => first.reply.snapshot.epoch,
+      "connection_generation" => first.reply.connection_generation,
+      "conference_generation" => 1,
+      "peer_generation" => 0,
       "to" => second.reply.self_id,
-      "data" => %{"type" => "candidate", "candidate" => %{"candidate" => "candidate:example"}}
+      "to_connection_generation" => second.reply.connection_generation,
+      "to_conference_generation" => 1,
+      "data" => %{
+        "type" => "candidate",
+        "negotiation_id" => "test-offer",
+        "candidate" => %{"candidate" => "candidate:example"}
+      }
     }
 
     assert {:error, :invalid_signal} =
              Session.request(ctx.session, nil, first.pid, {:signal, signal})
 
-    Session.request(ctx.session, nil, first.pid, {:media, true})
-    Session.request(ctx.session, nil, second.pid, {:media, true})
+    for guest <- [first, second] do
+      assert {:ok, _} =
+               Session.request(
+                 ctx.session,
+                 nil,
+                 guest.pid,
+                 {:media,
+                  %{
+                    "epoch" => guest.reply.snapshot.epoch,
+                    "connection_generation" => guest.reply.connection_generation,
+                    "ready" => true,
+                    "microphone" => false,
+                    "camera" => false
+                  }}
+               )
+    end
+
     assert {:ok, %{}} = Session.request(ctx.session, nil, first.pid, {:signal, signal})
 
     assert_receive {pid, {:room_signal, %{from: from}}}

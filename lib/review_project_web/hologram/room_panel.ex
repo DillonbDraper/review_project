@@ -5,7 +5,7 @@ defmodule ReviewProjectWeb.Hologram.RoomPanel do
 
   alias ReviewProject.Rooms
   alias ReviewProjectWeb.RoomErrors
-  alias ReviewProjectWeb.Hologram.{RoomUI, UserAuth}
+  alias ReviewProjectWeb.Hologram.{ConferenceBrowser, RoomUI, UserAuth}
 
   middleware UserAuth, :mount_current_scope
 
@@ -33,6 +33,7 @@ defmodule ReviewProjectWeb.Hologram.RoomPanel do
     |> put_state(
       room_id: props.room_id,
       signed_in: not is_nil(scope),
+      recovering: false,
       rooms: rooms,
       joined: false,
       busy: false,
@@ -47,6 +48,7 @@ defmodule ReviewProjectWeb.Hologram.RoomPanel do
       error: "",
       copy_status: "",
       generation: 0,
+      conference_generation: 0,
       operation_id: 0,
       operation_pending: false,
       origin: "",
@@ -176,6 +178,7 @@ defmodule ReviewProjectWeb.Hologram.RoomPanel do
 
     component
     |> put_state(
+      recovering: false,
       joined: false,
       busy: false,
       participants: [],
@@ -196,6 +199,7 @@ defmodule ReviewProjectWeb.Hologram.RoomPanel do
         )
     )
     |> put_action(name: :reset, target: "chat-panel", params: %{resume: true})
+    |> stop_conference()
   end
 
   def action(:restore, _params, component) do
@@ -340,7 +344,14 @@ defmodule ReviewProjectWeb.Hologram.RoomPanel do
                     display_name: component.state.display_name,
                     invitation: component.state.invitation
                   },
-                  events: ["room_state", "room_ended", "room_restart", "chat_message"]
+                  events: [
+                    "room_state",
+                    "room_ended",
+                    "room_restart",
+                    "chat_message",
+                    "conference_signal",
+                    "conference_peer"
+                  ]
                 }
               ])
 
@@ -398,7 +409,10 @@ defmodule ReviewProjectWeb.Hologram.RoomPanel do
         component
 
       params.status == "ok" ->
-        component |> accept(params.result) |> schedule_poll()
+        component
+        |> accept(params.result)
+        |> schedule_poll()
+        |> conference(:roster, %{snapshot: params.result})
 
       params.status == "timeout" ->
         reconnect(component)
@@ -409,6 +423,8 @@ defmodule ReviewProjectWeb.Hologram.RoomPanel do
   end
 
   def action(:leave, _params, component) do
+    component = stop_conference(component)
+
     JS.call(:Browser, :push, [
       "leave",
       %{},
@@ -562,6 +578,7 @@ defmodule ReviewProjectWeb.Hologram.RoomPanel do
 
   defp transport("joined", reply, component) do
     dialog("join-room-dialog", false)
+    resume = component.state.recovering
 
     if component.state.welcome do
       JS.call(:Browser, :save, [component.state.room_id, %{welcome: false}])
@@ -569,7 +586,13 @@ defmodule ReviewProjectWeb.Hologram.RoomPanel do
     end
 
     component
-    |> put_state(self_id: reply.self_id, joined: true, welcome: false, uncertain: false)
+    |> put_state(
+      self_id: reply.self_id,
+      joined: true,
+      recovering: false,
+      welcome: false,
+      uncertain: false
+    )
     |> accept(reply.snapshot)
     |> put_action(
       name: :activate,
@@ -582,16 +605,31 @@ defmodule ReviewProjectWeb.Hologram.RoomPanel do
         room_generation: component.state.generation
       }
     )
+    |> start_conference(reply, resume)
   end
 
   defp transport("room_state", snapshot, component) do
-    if component.state.joined, do: accept(component, snapshot), else: component
+    if component.state.joined,
+      do: component |> accept(snapshot) |> conference(:roster, %{snapshot: snapshot}),
+      else: component
   end
 
   defp transport("chat_message", message, component) do
     if component.state.joined,
       do:
         put_action(component, name: :received, target: "chat-panel", params: %{message: message}),
+      else: component
+  end
+
+  defp transport("conference_signal", signal, component) do
+    if component.state.joined,
+      do: conference(component, :signal, %{signal: signal}),
+      else: component
+  end
+
+  defp transport("conference_peer", peer, component) do
+    if component.state.joined,
+      do: conference(component, :peer_reset, %{peer: peer}),
       else: component
   end
 
@@ -623,6 +661,7 @@ defmodule ReviewProjectWeb.Hologram.RoomPanel do
 
     component
     |> put_state(
+      recovering: true,
       joined: false,
       busy: true,
       generation: generation,
@@ -633,6 +672,7 @@ defmodule ReviewProjectWeb.Hologram.RoomPanel do
       target: "chat-panel",
       params: %{retry: true, generation: generation, status: "Reconnecting to room chat…"}
     )
+    |> stop_conference("recover")
   end
 
   defp ended(component, error) do
@@ -642,6 +682,7 @@ defmodule ReviewProjectWeb.Hologram.RoomPanel do
 
     component
     |> put_state(
+      recovering: false,
       joined: false,
       busy: false,
       participants: [],
@@ -650,6 +691,41 @@ defmodule ReviewProjectWeb.Hologram.RoomPanel do
       error: ""
     )
     |> put_action(name: :reset, target: "chat-panel", params: %{status: RoomUI.error(error)})
+    |> stop_conference()
+  end
+
+  defp start_conference(component, reply, resume) do
+    generation = ConferenceBrowser.invalidate(component.state.conference_generation)
+
+    component
+    |> put_state(:conference_generation, generation)
+    |> conference(:joined, %{
+      self_id: reply.self_id,
+      connection_generation: reply.connection_generation,
+      snapshot: reply.snapshot,
+      supported: ConferenceBrowser.supported?(),
+      resume: resume
+    })
+  end
+
+  defp stop_conference(component, mode \\ "stop") do
+    generation = ConferenceBrowser.invalidate(component.state.conference_generation)
+
+    component
+    |> put_state(:conference_generation, generation)
+    |> conference(:stopped, %{mode: mode})
+  end
+
+  # A component has one next action. Preserve chat/poll continuations while the
+  # conference applies the same room event and binds its rendered media nodes.
+  defp conference(component, event, params) do
+    params =
+      Map.merge(params, %{
+        generation: component.state.conference_generation,
+        next_action: component.next_action
+      })
+
+    put_action(component, name: event, target: "conference-panel", params: params)
   end
 
   defp refused(component, error) do

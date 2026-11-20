@@ -1,5 +1,5 @@
 defmodule ReviewProjectWeb.RoomChannel do
-  @moduledoc "Live room admission, durable chat and membership lifecycle."
+  @moduledoc "Room admission, chat and membership-authorized conference signaling."
   use Phoenix.Channel
 
   alias ReviewProject.Rooms
@@ -24,7 +24,7 @@ defmodule ReviewProjectWeb.RoomChannel do
       # check makes sure this channel is bound to the process it actually joined.
       case Rooms.request(socket.assigns.current_scope, room_id, :snapshot) do
         {:ok, %{epoch: epoch}} when epoch == reply.snapshot.epoch ->
-          {:ok, Map.take(reply, [:self_id, :snapshot, :messages]),
+          {:ok, Map.take(reply, [:self_id, :connection_generation, :snapshot, :messages]),
            assign(socket, room_id: room_id, coordinator_ref: ref)}
 
         _ ->
@@ -55,6 +55,22 @@ defmodule ReviewProjectWeb.RoomChannel do
           {"chat_history", params} when is_map(params) ->
             Rooms.request(socket.assigns.current_scope, socket.assigns.room_id, :history)
 
+          {"conference_state", params} when is_map(params) ->
+            Rooms.request(socket.assigns.current_scope, socket.assigns.room_id, {:media, params})
+
+          {"conference_signal", params} when is_map(params) ->
+            Rooms.request(socket.assigns.current_scope, socket.assigns.room_id, {:signal, params})
+
+          {"conference_ice", params} when is_map(params) ->
+            Rooms.request(socket.assigns.current_scope, socket.assigns.room_id, {:ice, params})
+
+          {"conference_reset", params} when is_map(params) ->
+            Rooms.request(
+              socket.assigns.current_scope,
+              socket.assigns.room_id,
+              {:reset_peer, params}
+            )
+
           _ ->
             {:error, :invalid_operation}
         end
@@ -77,6 +93,16 @@ defmodule ReviewProjectWeb.RoomChannel do
 
   def handle_info({:room_chat_message, message}, socket) do
     push(socket, "chat_message", message)
+    {:noreply, socket}
+  end
+
+  def handle_info({:room_signal, signal}, socket) do
+    push(socket, "conference_signal", signal)
+    {:noreply, socket}
+  end
+
+  def handle_info({:room_conference_peer, peer}, socket) do
+    push(socket, "conference_peer", peer)
     {:noreply, socket}
   end
 

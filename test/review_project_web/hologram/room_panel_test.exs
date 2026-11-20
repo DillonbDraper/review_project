@@ -5,7 +5,7 @@ defmodule ReviewProjectWeb.Hologram.RoomPanelTest do
   import ReviewProject.RoomsFixtures
   alias Hologram.{Component, Server}
   alias ReviewProject.{Accounts, Rooms}
-  alias ReviewProjectWeb.Hologram.{RoomPanel, RoomUI, UserAuth}
+  alias ReviewProjectWeb.Hologram.{ConferencePanel, RoomPanel, RoomUI, UserAuth}
 
   test "creation derives ownership from the verified session and returns a shareable invitation" do
     user = user_fixture()
@@ -117,8 +117,14 @@ defmodule ReviewProjectWeb.Hologram.RoomPanelTest do
 
     refute disconnected.state.joined
     assert disconnected.state.busy
-    assert disconnected.next_action.name == :disconnected
-    assert disconnected.next_action.target == "chat-panel"
+    assert disconnected.state.recovering
+    assert disconnected.next_action.name == :stopped
+    assert disconnected.next_action.target == "conference-panel"
+    assert disconnected.next_action.params.mode == "recover"
+    continuation = conference_continuation(disconnected.next_action)
+    assert continuation.name == :disconnected
+    assert continuation.target == "chat-panel"
+    assert continuation.params.generation == disconnected.state.generation
 
     stale =
       RoomPanel.action(
@@ -147,7 +153,9 @@ defmodule ReviewProjectWeb.Hologram.RoomPanelTest do
     refute ended.state.joined
     refute ended.state.busy
     assert ended.state.status =~ "another tab"
-    assert ended.next_action.name == :reset
+    assert ended.next_action.name == :stopped
+    assert ended.next_action.params.mode == "stop"
+    assert conference_continuation(ended.next_action).name == :reset
     stale_retry = RoomPanel.action(:retry, %{generation: component.state.generation}, ended)
     assert stale_retry.state == ended.state
   end
@@ -206,6 +214,129 @@ defmodule ReviewProjectWeb.Hologram.RoomPanelTest do
              "https://host:4001/rooms/room#invitation=a%2Bb%3D"
 
     assert RoomUI.invitation_url("https://host", "room", "") == ""
+  end
+
+  test "admission starts the conference directly and preserves chat activation" do
+    component = joined_component()
+    component = Component.put_state(component, joined: false, recovering: true)
+
+    joined =
+      RoomPanel.action(
+        :transport,
+        %{
+          generation: component.state.generation,
+          type: "joined",
+          result: %{
+            self_id: "host",
+            connection_generation: 3,
+            snapshot: snapshot(),
+            messages: []
+          }
+        },
+        component
+      )
+
+    assert joined.state.joined
+    refute joined.state.recovering
+    action = joined.next_action
+    assert action.target == "conference-panel"
+    assert action.name == :joined
+    assert action.params.generation == joined.state.conference_generation
+    assert action.params.connection_generation == 3
+    assert action.params.resume
+    assert action.params.snapshot == snapshot()
+    chat = conference_continuation(action)
+    assert chat.name == :activate
+    assert chat.target == "chat-panel"
+    assert chat.params.self_id == "host"
+    assert chat.params.messages == []
+    assert chat.params.room_generation == joined.state.generation
+  end
+
+  test "roster, signals, and pair resets target the conference for the current room connection" do
+    component = joined_component()
+
+    for {type, result, event, key} <- [
+          {"room_state", snapshot(), :roster, :snapshot},
+          {"conference_signal", %{from: "guest", data: %{}}, :signal, :signal},
+          {"conference_peer", %{from: "guest", peer_generation: 2}, :peer_reset, :peer}
+        ] do
+      params = %{generation: component.state.generation, type: type, result: result}
+      updated = RoomPanel.action(:transport, params, component)
+      action = updated.next_action
+      assert action.target == "conference-panel"
+      assert action.name == event
+      assert action.params[key] == result
+      assert action.params.generation == component.state.conference_generation
+
+      stale =
+        RoomPanel.action(:transport, %{params | generation: params.generation - 1}, component)
+
+      assert stale == component
+
+      unjoined = Component.put_state(component, joined: false)
+      assert RoomPanel.action(:transport, params, unjoined) == unjoined
+    end
+  end
+
+  test "snapshot delivery updates the conference without dropping the next room poll" do
+    component = joined_component()
+
+    updated =
+      RoomPanel.action(
+        :snapshot,
+        %{generation: component.state.generation, status: "ok", result: snapshot()},
+        component
+      )
+
+    assert updated.next_action.name == :roster
+    assert updated.next_action.params.snapshot == snapshot()
+    poll = conference_continuation(updated.next_action)
+    assert poll.name == :poll
+    assert poll.delay == 15_000
+    assert poll.params.generation == updated.state.generation
+  end
+
+  test "leaving clears conference intent before a server acknowledgement arrives" do
+    component = joined_component()
+    leaving = RoomPanel.action(:leave, %{}, component)
+    assert leaving.state.busy
+    assert leaving.next_action.name == :stopped
+    assert leaving.next_action.params.mode == "stop"
+    assert leaving.next_action.params.generation > component.state.conference_generation
+  end
+
+  test "a restored page clears the call before restoring chat and advances its saved resource epoch" do
+    component = Component.put_state(joined_component(), conference_generation: 500)
+    mounted = RoomPanel.action(:room_mounted, %{}, component)
+    refute mounted.state.joined
+    refute mounted.state.recovering
+    assert mounted.next_action.name == :stopped
+    assert mounted.next_action.params.mode == "stop"
+    assert mounted.next_action.params.generation > 500
+    reset = conference_continuation(mounted.next_action)
+    assert reset.name == :reset
+    assert reset.target == "chat-panel"
+    assert reset.params.resume
+  end
+
+  defp conference_continuation(action) do
+    component = ConferencePanel.init(%{}, %Component{}, %Server{})
+    updated = ConferencePanel.action(action.name, action.params, component)
+    assert updated.next_action.name == :sync_tiles
+    next = updated.next_action
+    ConferencePanel.action(next.name, next.params, updated).next_action
+  end
+
+  defp snapshot do
+    %{
+      room_name: "Movie night",
+      epoch: "epoch",
+      roster_revision: 1,
+      seats: [],
+      connected_count: 1,
+      seat_count: 1
+    }
   end
 
   defp authenticated(user) do

@@ -1,5 +1,6 @@
 // Native resources only. Hologram owns room/chat state and all recovery policy.
 import {Socket} from "../../deps/phoenix/priv/static/phoenix.mjs";
+import ConferenceNative from "./conference_native.mjs";
 
 function browser() {
   let host, transport;
@@ -15,6 +16,7 @@ function browser() {
     try { sessionStorage.setItem(`review-room:${id}`, JSON.stringify(next)); } catch {}
   };
   const disconnect = () => {
+    ConferenceNative.invalidate();
     const prior = transport;
     transport = null;
     prior?.channel.leave();
@@ -33,7 +35,7 @@ function browser() {
     }
   };
   new MutationObserver(mount).observe(document.documentElement, {childList: true, subtree: true});
-  globalThis.addEventListener("pagehide", disconnect);
+  globalThis.addEventListener("pagehide", () => disconnect());
   globalThis.addEventListener("pageshow", event => {
     if (event.persisted) { host = null; mount(); }
   });
@@ -90,7 +92,12 @@ function browser() {
       const channel = socket.channel(topic, params);
       const resource = transport = {socket, channel};
       const report = (type, result = {}) => {
-        if (transport === resource) dispatch("transport", "room-controls", {generation, type, result});
+        if (transport === resource) {
+          // Release devices before Hologram processes the transport event.
+          // Recovery decisions and component-to-component routing live in Elixir.
+          if (type === "lost") ConferenceNative.invalidate();
+          dispatch("transport", "room-controls", {generation, type, result});
+        }
       };
       for (const event of events) channel.on(event, result => report(event, result));
       channel.onError(() => report("lost"));

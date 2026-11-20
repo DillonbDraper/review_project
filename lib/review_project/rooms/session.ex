@@ -6,7 +6,7 @@ defmodule ReviewProject.Rooms.Session do
   Only those processes may make requests.
   """
   use GenServer, restart: :transient
-  alias ReviewProject.Rooms.{Store, Timeline}
+  alias ReviewProject.Rooms.{Conference, ICE, Store, Timeline}
 
   def start_link(opts) do
     name = Keyword.get(opts, :name, via(Keyword.fetch!(opts, :room_id)))
@@ -52,6 +52,8 @@ defmodule ReviewProject.Rooms.Session do
           absent_since: now,
           authority_revision: 0,
           epoch: Ecto.UUID.generate(),
+          roster_revision: 0,
+          peer_generations: %{},
           timeline: Timeline.new(now),
           clock: clock,
           wall_clock: wall_clock,
@@ -91,6 +93,7 @@ defmodule ReviewProject.Rooms.Session do
             state = %{
               state
               | members: Map.put(state.members, seat.id, member(seat, pid, ref, nil)),
+                roster_revision: state.roster_revision + 1,
                 monitors: Map.put(state.monitors, ref, seat.id)
             }
 
@@ -164,7 +167,8 @@ defmodule ReviewProject.Rooms.Session do
 
             state = %{
               state
-              | members: Map.put(state.members, id, member(seat, nil, nil, deadline))
+              | members: Map.put(state.members, id, member(seat, nil, nil, deadline)),
+                roster_revision: state.roster_revision + 1
             }
 
             state = if seat.slot == 0, do: %{state | absent_since: state.clock.()}, else: state
@@ -230,20 +234,80 @@ defmodule ReviewProject.Rooms.Session do
     end
   end
 
-  defp operate({:media, enabled}, id, member, state) when is_boolean(enabled) do
-    state = %{state | members: Map.put(state.members, id, %{member | media: enabled})}
-    broadcast(state)
-    {:reply, {:ok, %{}}, state}
+  defp operate({:media, params}, id, member, state) when is_map(params) do
+    with :ok <- current_connection(params, member, state),
+         {:ok, conference} <- Conference.update(member.conference, params) do
+      state = %{
+        state
+        | members: Map.put(state.members, id, %{member | conference: conference}),
+          roster_revision:
+            state.roster_revision + if(conference != member.conference, do: 1, else: 0)
+      }
+
+      if conference != member.conference, do: broadcast(state)
+      {:reply, {:ok, snapshot(state)}, state}
+    else
+      {:error, reason} -> {:reply, {:error, reason}, state}
+    end
   end
 
-  defp operate({:signal, %{"to" => to, "data" => data}}, id, member, state) do
-    target = state.members[to]
+  defp operate({:ice, params}, id, member, state) when is_map(params) do
+    with :ok <- current_connection(params, member, state),
+         {:ok, member} <- consume(member, :ice, 6, state.clock.()) do
+      state = %{state | members: Map.put(state.members, id, member)}
+      {:reply, ICE.issue(id), state}
+    else
+      {:error, reason} -> {:reply, {:error, reason}, state}
+    end
+  end
 
-    if (member.media and target) && target.pid && target.media && to != id && valid_signal?(data) do
-      send(target.pid, {:room_signal, %{from: id, data: data}})
+  defp operate({:reset_peer, %{"to" => _to} = params}, id, member, state) do
+    with :ok <- current_connection(params, member, state),
+         {:ok, target} <- conference_target(params, id, member, state),
+         true <- params["peer_generation"] == peer_generation(state, member, target),
+         {:ok, member} <- consume(member, :reset_peer, 4, state.clock.()) do
+      generation = peer_generation(state, member, target) + 1
+      key = peer_key(member, target)
+
+      state = %{
+        state
+        | peer_generations: Map.put(state.peer_generations, key, generation),
+          members: Map.put(state.members, id, member)
+      }
+
+      send(target.pid, {:room_conference_peer, peer_envelope(state, member, target, generation)})
+      send(member.pid, {:room_conference_peer, peer_envelope(state, target, member, generation)})
       {:reply, {:ok, %{}}, state}
     else
-      {:reply, {:error, :invalid_signal}, state}
+      false -> {:reply, {:error, :stale_peer}, state}
+      {:error, reason} -> {:reply, {:error, reason}, state}
+    end
+  end
+
+  defp operate({:signal, %{"to" => to, "data" => data} = params}, id, member, state)
+       when is_binary(to) do
+    with :ok <- current_connection(params, member, state),
+         {:ok, target} <- conference_target(params, id, member, state),
+         true <- params["peer_generation"] == peer_generation(state, member, target),
+         true <- Conference.valid_signal?(data),
+         {:ok, member} <- consume_signal(member, state.clock.()) do
+      payload = %{
+        from: id,
+        epoch: state.epoch,
+        connection_generation: member.seat.connection_generation,
+        conference_generation: member.conference.generation,
+        to_connection_generation: target.seat.connection_generation,
+        to_conference_generation: target.conference.generation,
+        peer_generation: peer_generation(state, member, target),
+        data: data
+      }
+
+      send(target.pid, {:room_signal, payload})
+      state = %{state | members: Map.put(state.members, id, member)}
+      {:reply, {:ok, %{}}, state}
+    else
+      {:error, reason} -> {:reply, {:error, reason}, state}
+      _ -> {:reply, {:error, :invalid_signal}, state}
     end
   end
 
@@ -252,6 +316,7 @@ defmodule ReviewProject.Rooms.Session do
       Store.release(state.room.id, id, member.seat.connection_generation, state.wall_clock.())
 
     state = detach(state, member)
+    state = %{state | roster_revision: state.roster_revision + 1}
 
     state =
       if seat.slot == 0 do
@@ -306,7 +371,22 @@ defmodule ReviewProject.Rooms.Session do
       end
 
     changed? = controller_id != state.controller_id
-    state = %{state | members: members}
+
+    state = %{
+      state
+      | members: members,
+        roster_revision: state.roster_revision + if(expired != [], do: 1, else: 0)
+    }
+
+    ready = Enum.filter(Map.values(members), &(&1.pid != nil and &1.conference.ready))
+
+    keys =
+      for first <- ready,
+          second <- ready,
+          first.seat.id < second.seat.id,
+          do: peer_key(first, second)
+
+    state = %{state | peer_generations: Map.take(state.peer_generations, keys)}
 
     state =
       if changed? do
@@ -325,7 +405,16 @@ defmodule ReviewProject.Rooms.Session do
   end
 
   defp member(seat, pid, ref, deadline),
-    do: %{seat: seat, pid: pid, ref: ref, deadline: deadline, media: false}
+    do: %{
+      seat: seat,
+      pid: pid,
+      ref: ref,
+      deadline: deadline,
+      conference: Conference.new(),
+      request_windows: %{},
+      signal_window: nil,
+      signal_count: 0
+    }
 
   defp detach(state, %{ref: ref}) when is_reference(ref) do
     Process.demonitor(ref, [:flush])
@@ -345,7 +434,8 @@ defmodule ReviewProject.Rooms.Session do
           display_name: member.seat.display_name,
           role: if(member.seat.slot == 0, do: :owner, else: :guest),
           connected: member.pid != nil,
-          media: member.media
+          connection_generation: member.seat.connection_generation,
+          conference: member.conference
         }
       end)
 
@@ -354,6 +444,7 @@ defmodule ReviewProject.Rooms.Session do
       room_id: state.room.id,
       room_name: state.room.name,
       epoch: state.epoch,
+      roster_revision: state.roster_revision,
       authority_revision: state.authority_revision,
       controller_id: state.controller_id,
       owner_present: Enum.any?(seats, &(&1.role == :owner and &1.connected)),
@@ -384,15 +475,75 @@ defmodule ReviewProject.Rooms.Session do
   defp schedule(%{maintenance_interval: :infinity}), do: :ok
   defp schedule(state), do: Process.send_after(self(), :maintain, state.maintenance_interval)
 
-  defp valid_signal?(
-         %{"type" => "description", "description" => %{"type" => type, "sdp" => sdp}} = data
-       )
-       when type in ["offer", "answer"] and is_binary(sdp),
-       do: byte_size(sdp) <= 65_536 and byte_size(Jason.encode!(data)) <= 73_728
+  defp current_connection(params, member, state) do
+    cond do
+      params["epoch"] != state.epoch ->
+        {:error, :stale_epoch}
 
-  defp valid_signal?(%{"type" => "candidate", "candidate" => %{"candidate" => candidate}} = data)
-       when is_binary(candidate),
-       do: byte_size(candidate) <= 4096 and byte_size(Jason.encode!(data)) <= 8192
+      params["connection_generation"] != member.seat.connection_generation ->
+        {:error, :stale_connection}
 
-  defp valid_signal?(_data), do: false
+      true ->
+        :ok
+    end
+  end
+
+  defp conference_target(params, id, member, state) do
+    target = state.members[params["to"]]
+
+    if target && target.pid && member.conference.ready && target.conference.ready &&
+         params["to"] != id && params["conference_generation"] == member.conference.generation &&
+         params["to_connection_generation"] == target.seat.connection_generation &&
+         params["to_conference_generation"] == target.conference.generation,
+       do: {:ok, target},
+       else: {:error, :invalid_signal}
+  end
+
+  defp peer_key(first, second),
+    do:
+      Enum.sort([
+        {first.seat.id, first.seat.connection_generation, first.conference.generation},
+        {second.seat.id, second.seat.connection_generation, second.conference.generation}
+      ])
+
+  defp peer_generation(state, first, second),
+    do: Map.get(state.peer_generations, peer_key(first, second), 0)
+
+  defp peer_envelope(state, from, to, generation),
+    do: %{
+      epoch: state.epoch,
+      from: from.seat.id,
+      connection_generation: from.seat.connection_generation,
+      conference_generation: from.conference.generation,
+      to_connection_generation: to.seat.connection_generation,
+      to_conference_generation: to.conference.generation,
+      peer_generation: generation
+    }
+
+  defp consume(member, operation, limit, now) do
+    {started, count} = Map.get(member.request_windows, operation, {now, 0})
+    {started, count} = if now - started >= 10_000, do: {now, 0}, else: {started, count}
+
+    if count < limit,
+      do:
+        {:ok,
+         %{
+           member
+           | request_windows: Map.put(member.request_windows, operation, {started, count + 1})
+         }},
+      else: {:error, :rate_limited}
+  end
+
+  # Four peers can generate a burst of candidates at once. Bound sustained
+  # signaling without making device availability part of admission.
+  defp consume_signal(member, now) do
+    member =
+      if is_nil(member.signal_window) or now - member.signal_window >= 10_000,
+        do: %{member | signal_window: now, signal_count: 0},
+        else: member
+
+    if member.signal_count < 256,
+      do: {:ok, %{member | signal_count: member.signal_count + 1}},
+      else: {:error, :rate_limited}
+  end
 end

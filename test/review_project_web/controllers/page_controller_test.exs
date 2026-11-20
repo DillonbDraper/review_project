@@ -12,6 +12,12 @@ defmodule ReviewProjectWeb.PageControllerTest do
 
     assert document |> LazyHTML.query("#youtube-player") |> Enum.empty?()
     assert document |> LazyHTML.query("#drawing-surface iframe") |> Enum.empty?()
+
+    assert document
+           |> LazyHTML.query(".review-column #conference-panel + #video-panel")
+           |> Enum.count() == 1
+
+    assert document |> LazyHTML.query(".workspace-grid > #chat-panel") |> Enum.count() == 1
     assert document |> LazyHTML.query("script[src^='/hologram/runtime-']") |> Enum.count() == 1
     assert document |> LazyHTML.query("script[src^='/hologram/page-']") |> Enum.count() == 1
 

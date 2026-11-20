@@ -13,6 +13,13 @@ export async function verifyRoomChat({host, guest, wait, call, roomURL}) {
 
   await wait(host, connected, "host chat connected");
   await wait(guest, connected, "guest chat connected");
+  await host.evaluate(`(() => {
+    // Exercise iframe identity without depending on an external YouTube request.
+    Hologram.dispatchAction('video_loaded', 'video-panel', {video_id: 'M7lc1UVf-VE', embed_url: 'about:blank'});
+  })()`);
+  await wait(host, "document.querySelector('#youtube-player')", "review player fixture");
+  await host.evaluate(`globalThis.__reviewPlayer = document.querySelector('#youtube-player');
+    globalThis.__callVideos = [...document.querySelectorAll('.conference-tile video')]`);
   const first = "A shared thought <script>window.untrustedChat = true</script> 👋";
   await send(host, first);
   await wait(guest, contains(first), "host message received by guest");
@@ -21,6 +28,7 @@ export async function verifyRoomChat({host, guest, wait, call, roomURL}) {
   await send(guest, "A reply from Sam");
   await wait(host, contains("A reply from Sam"), "guest reply received by host");
   const ids = await guest.evaluate("[...document.querySelectorAll('#chat-messages .chat-message')].map(el => el.id)");
+  assert(await host.evaluate("__reviewPlayer === document.querySelector('#youtube-player') && __callVideos.every(video => video.isConnected && [...document.querySelectorAll('.conference-tile video')].includes(video))"), "chat preserves the review iframe and participant video elements");
   console.log("PASS: shared chat in both directions, trusted names, escaped text and no duplicate echo");
 
   await guest.fill("#chat-draft", "😀é");

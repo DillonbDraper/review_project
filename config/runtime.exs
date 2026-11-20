@@ -23,6 +23,17 @@ end
 config :review_project, ReviewProjectWeb.Endpoint,
   http: [port: String.to_integer(System.get_env("PORT", "4000"))]
 
+# Shared by development and releases. Only the secret's file path is configured;
+# the secret itself is read server-side when an admitted member requests ICE.
+if path = System.get_env("CONFERENCE_ICE_CONFIG") do
+  ice =
+    with {:ok, json} <- File.read(path),
+         {:ok, config} when is_map(config) <- Jason.decode(json),
+         do: config
+
+  config :review_project, :conference_ice, if(is_map(ice), do: ice, else: :unavailable)
+end
+
 # Log in with Google is enabled when its OAuth client credentials are set.
 # Tests use the fixed credentials from config/test.exs instead.
 if config_env() != :test and System.get_env("GOOGLE_CLIENT_ID") do

@@ -46,6 +46,28 @@ Messages appear in one continuous scrollable conversation, without paging or a
 display limit. New arrivals preserve your position when you are reading above.
 Video playback remains local.
 
+Rooms initialize conference receivers as soon as you join, without requesting
+camera or microphone permission. **Turn on microphone** and **Turn on camera**
+work independently; either can fail or remain unanswered while you receive the
+other participants' media. **Enable room audio** appears if playback needs a
+browser gesture. Turning a device off releases its capture; leaving or moving
+the seat to another tab closes the call's native resources.
+
+Connected participants appear in separate square tiles above the review video,
+including a muted local preview marked **You**. Camera-off or unavailable video
+stays black with the participant's name. Tiles wrap on narrower windows, and
+remote audio continues independently of the camera display.
+
+Conferencing supports direct connections and configurable STUN/TURN with temporary
+credentials. Failed peer connections get a bounded ICE restart and coordinated
+replacement, with **Retry call connection** if recovery is exhausted. Signaling
+loss releases capture immediately; the same page restores previously enabled
+devices after rejoining. Fresh loads start with devices off.
+
+See [conference networking](docs/conference-networking.md) for runtime relay
+configuration and local checks. Public relay deployment, Firefox background-tab
+scheduling, and cross-network/browser validation remain outstanding. Use localhost or trusted HTTPS for device access.
+
 For a second computer on your home network, follow the
 [home-network chat guide](docs/home-network-chat.md). Use the same trusted HTTPS
 LAN address on the host and guest so invitation links work on both computers.
@@ -62,7 +84,16 @@ disposable development database. `APP_URL` and `CHROME_DEBUG_URL` override the
 default `http://localhost:4000` and `http://127.0.0.1:9222`. The check exercises
 the creation modal, invitation admission, shared chat, full history, socket
 reconnection, draft recovery, live roster, tab replacement, explicit leave, and
-invalid-link feedback. Room lifecycle and client delivery/history behavior are written in Elixir/Hologram
+invalid-link feedback. It also checks receive-only conferencing, independent
+device failures and pending permissions, later device enablement, advancing RTP
+in both directions, frames displayed in participant tiles, five-person layout
+and mesh, audio playback, offer collisions, and capture cleanup using
+Chrome's synthetic camera/microphone flags below. Conference state and negotiation
+checks run in ExUnit; native handle/cleanup checks run with
+`node test/js/conference_native_test.mjs`.
+Use normal autoplay restrictions for the room check: omit the autoplay override
+from the legacy spike smoke-test command below.
+Room lifecycle and client delivery/history behavior are written in Elixir/Hologram
 and covered by `mix precommit`; JavaScript only adapts browser APIs and the Phoenix
 channel transport. Run checks before starting
 the development server: Hologram dev/test builds share generated asset paths;

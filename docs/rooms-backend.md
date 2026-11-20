@@ -3,9 +3,11 @@
 The backend implements the accepted room data model with durable messages named
 `chat_room_messages`. It adds `rooms`, `room_invitations`, `room_seats`, and
 `chat_room_messages`, Ecto schemas, the `ReviewProject.Rooms` context, and a
-supervised coordinator for each active room. This change adds no user schema,
-auth flow, web routes, client UI, or browser media implementation. The native
-YouTube/mesh/TURN spike integration remains a transport/client task.
+supervised coordinator for each active room. The original backend change added
+no user schema, auth flow, web routes, client UI, or browser media implementation.
+The workspace now integrates room admission, chat, and direct conferencing as
+described below. YouTube synchronization and public TURN deployment remain
+separate tasks.
 
 ## Authentication integration
 
@@ -79,12 +81,38 @@ uses the latest snapshot's epoch, playback revision, and authority revision. The
 server checks controller identity before changing shared state. Native player
 callbacks must not be treated as shared playback commands.
 
-Other requests are `:snapshot`, `:leave`, `{:media, boolean}`, and
-`{:signal, %{"to" => seat_id, "data" => description_or_candidate}}`. Signals only
-reach connected, media-enabled seats within the same room. Notifications are
+Other requests are `:snapshot`, `:leave`, `{:media, state}`, and
+`{:signal, envelope}`. The workspace channel exposes the latter two as
+`conference_state` and `conference_signal`. Conference state includes the room
+`epoch`, the seat's `connection_generation`, and boolean `ready`, `microphone`,
+and `camera` fields. Ready means the receiver is initialized, even without local
+devices. Changing readiness advances a transient conference generation; device
+toggles do not. Join replies and public seats include the connection generation,
+and each seat exposes its conference state. A monotonic `roster_revision` prevents
+older request acknowledgements from rolling back newer conference rosters.
+
+Signal envelopes include `epoch`, `connection_generation`,
+`conference_generation`, `to`, `to_connection_generation`,
+`to_conference_generation`, `peer_generation`, and `data`. Data is a size-bounded description or ICE
+candidate with a `negotiation_id`; descriptions are only offers/answers. The
+server derives `from`, checks both endpoints' generations and readiness, and
+allows at most 256 valid signals per member per 10 seconds. Signals only reach
+current connected conference-ready seats in the same room; local device access
+is not required. Notifications are
 `{:room_state, snapshot}`, `{:room_chat_message, message}`, `{:room_signal, signal}`,
 `{:room_seat_replaced, reason}`, `{:room_left, reason}`, and `{:room_closed, reason}`.
 Public snapshots expose random seat IDs, not account IDs or browser identity hashes.
+
+`RoomChannel` forwards `:room_signal` as `conference_signal`. `ConferencePanel`
+uses client-side Elixir: `ConferenceState` owns devices and roster reconciliation,
+`ConferencePeer` serializes SDP/ICE negotiation, and `ConferenceBrowser` sequences
+browser API calls. `assets/js/conference_native.mjs` holds scoped native handles,
+projects browser events, reports promise completions, and disposes resources
+synchronously when membership or the page ends. `ConferenceTiles` derives the
+named square tiles from connected membership; Elixir binds scoped video elements
+after rendering, independently of persistent remote audio. Runtime ICE credentials
+and bounded recovery are implemented; public relay deployment and verification
+remain release gates in the [conferencing plan](conferencing-plan.md).
 
 Owner-only APIs are `list_rooms/1`, `get_room/2`, `rotate_invitation/2`,
 `close_room/2`, and `list_messages/3`. Existing guests retain their seats after
@@ -148,3 +176,30 @@ They use supervised processes and an injected clock rather than sleeping through
 the 10/30-second deadlines. Real-browser YouTube/media behavior, account logout
 integration, desktop-browser coverage, public TURN networks, and the combined
 multi-hour soak still need verification when the transport/client is connected.
+
+
+## Conference recovery and ICE
+
+`conference_ice` (`{:ice, params}`) checks the live channel membership, account
+session, room epoch, and connection generation before issuing temporary TURN
+credentials. It works before device readiness; neither a missing relay nor a
+failed credential request blocks admission/chat. Six requests per ten seconds
+are allowed per seat. Shared secrets stay server-side and temporary credentials
+are held behind scoped native handles rather than saved Hologram state.
+
+`conference_reset` (`{:reset_peer, envelope}`) checks both live, ready members and
+all connection/conference generations. Each pair has a server-coordinated
+`peer_generation` starting at zero. A successful reset increments it and sends
+`conference_peer` to both endpoints. The expected old pair generation makes
+simultaneous reset requests converge on one replacement. Every signal must carry
+the current pair generation, so delayed SDP/ICE from the previous connection is
+rejected. Reset requests are limited to four per ten seconds per seat. Pair
+versions are discarded when either endpoint's membership/readiness changes;
+there are at most ten pair entries in a five-person room.
+
+These messages use the existing `/room-socket` channel and its authenticated
+session/membership checks. No new Phoenix routes, scopes, pipelines, or
+`live_session` blocks are introduced. The Hologram watch page continues to use
+its existing `UserAuth` middleware.
+
+See [conference networking](conference-networking.md) for configuration.

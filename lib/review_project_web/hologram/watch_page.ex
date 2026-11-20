@@ -5,6 +5,7 @@ defmodule ReviewProjectWeb.Hologram.WatchPage do
   alias ReviewProjectWeb.Hologram.{
     AccountMenu,
     ChatPanel,
+    ConferencePanel,
     RoomPanel,
     UserAuth,
     VideoPanel,
@@ -48,9 +49,12 @@ defmodule ReviewProjectWeb.Hologram.WatchPage do
       <RoomPanel cid="room-controls" room_id={@room_id} />
 
       <div class="workspace-grid">
-        <VideoPanel cid="video-panel" />
+        <div class="review-column">
+          <ConferencePanel cid="conference-panel" />
+          <VideoPanel cid="video-panel" />
+          <WhiteboardPanel />
+        </div>
         <ChatPanel cid="chat-panel" />
-        <WhiteboardPanel />
       </div>
 
       <footer class="workspace-footer">
