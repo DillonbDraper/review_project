@@ -5,9 +5,9 @@ The backend implements the accepted room data model with durable messages named
 `chat_room_messages`, Ecto schemas, the `ReviewProject.Rooms` context, and a
 supervised coordinator for each active room. The original backend change added
 no user schema, auth flow, web routes, client UI, or browser media implementation.
-The workspace now integrates room admission, chat, and direct conferencing as
-described below. YouTube synchronization and public TURN deployment remain
-separate tasks.
+The workspace now integrates room admission, chat, direct conferencing, and
+shared YouTube playback as described below. Public TURN deployment remains a
+separate task.
 
 ## Authentication integration
 
@@ -76,10 +76,12 @@ snapshot = joined.snapshot
 ```
 
 Only request an older page when the current page is nonempty. Playback commands
-are `video`, `play`, `pause`, and `seek` (with `position` in seconds). Every command
+are `video`, `play`, `pause`, `seek` (with `position` in seconds), and
+`set_playback` (an atomic `position` and boolean `playing`). Every command
 uses the latest snapshot's epoch, playback revision, and authority revision. The
-server checks controller identity before changing shared state. Native player
-callbacks must not be treated as shared playback commands.
+server checks controller identity before changing shared state. Raw native player
+callbacks are observations; only stabilized, controller-authorized intent may
+become a shared command.
 
 Other requests are `:snapshot`, `:leave`, `{:media, state}`, and
 `{:signal, envelope}`. The workspace channel exposes the latter two as
@@ -152,6 +154,101 @@ its reservation, and chat survive; playback starts unselected/paused, authority
 resets, all transports rejoin, and a fresh epoch invalidates old commands. The
 owner's absence grace begins again for the new coordinator incarnation.
 
+## Shared video controls
+
+The production `VideoPanel` provides source selection, Play/Pause/Replay,
+elapsed/duration, seek preview with a 200 ms debounced commit, and local volume
+and mute below the unobscured official YouTube player. It also works locally
+before room admission. Individual prerecorded videos and Shorts are supported;
+video links with playlist context select that video only. Playlist-only input
+and explicit live links are rejected without replacing the current player.
+Live metadata reported by the SDK disables playback with an explanation.
+Uploads and other providers remain deferred by the release contract.
+
+`PlaybackState` owns the client timeline, authority checks, correction policy,
+pending commands, local preferences, and recovery in Elixir. `PlaybackIntent`
+conservatively infers controller input from normalized observations: foreground
+iframe focus, position discontinuities, stable transport state, bounded buffering,
+and suppression after application commands. Ambiguous events and follower
+actions reconcile locally. End-of-video commits a paused timeline at duration;
+Replay atomically starts from zero. The final frame can precede the SDK duration,
+so ended players are not repeatedly corrected for that small difference.
+
+`assets/js/playback_native.mjs` owns the SDK, iframe, timers, DOM lifecycle, and
+normalized primitive samples. `assets/js/youtube_api.mjs` shares on-demand SDK
+loading with the research facade; production does not import spike policy.
+The iframe remains stable through ordinary controls and source validation.
+Readiness requires the selected source to finish cueing, rather than just the
+SDK's `onReady`. Errors, autoplay blocks, and buffering stay local, with enable
+and retry controls. Navigation, room replacement, logout, and connection loss
+suspend playback immediately; generations discard late callbacks. Brief room
+recovery preserves local audio and enable preferences. Explicit leave requires
+enabling playback again after joining.
+
+The existing room channel accepts `control` with the authenticated scope,
+membership, controller identity, epoch, playback revision, and authority revision
+checks already enforced by the coordinator. Source resolution does not mutate a
+room. RoomPanel forwards join/roster/stop events to playback while preserving the
+conference and chat action chain, including explicit continuation targets.
+No new routes, Phoenix pipelines, scopes, or `live_session` blocks are needed.
+The existing Hologram pages retain `UserAuth, :mount_current_scope`; protected
+room operations continue through `RoomChannel` session/membership validation.
+
+Timed snapshots poll every two seconds. Midpoint clock calibration uses the
+lowest observed round trip; browser monotonic time projects the shared timeline.
+Fresh snapshots never correct against an old player observation. Position
+display is anchored no earlier than the snapshot timestamp. Samples queued for
+more than 500 ms are discarded. Correction tolerances are 0.2 seconds playing
+and 0.15 seconds paused, with a one-second seek cooldown and buffering guards.
+Hidden muted tabs defer corrections, then request a fresh snapshot and catch up
+when visible. Inferred commands suspend correction until their acknowledgement;
+rejection requires a new snapshot, with no blind command replay. Delayed seek
+commits carry the displayed generation and revisions so they cannot cross a
+source or authority change.
+
+### Browser verification
+
+`scripts/production_playback_browser_test.mjs` exercises the actual workspace,
+login/admission, room transport, real YouTube media, native trusted input,
+local audio, stable iframe, end/replay, ten-second handoff, returning-host reclaim,
+chat, and conference roster. Its full run adds three independent browser
+identities for five participants across Chrome and Firefox, checks visibility
+recovery, and collects at least 120 settled samples over 60 seconds. One
+participant delays both WebSocket directions by 250 ms; the harness verifies
+the resulting snapshot round trip and asserts p95 timeline drift and spread
+at most 0.5 seconds, with bounded corrections. Buffering/recovery is recorded
+separately rather than counted as settled playback.
+
+Use an isolated development database and a local HTTPS server with Hologram
+enabled. Refresh the one-use local login fixture before each full run; it sends
+no email and only reuses its own `playback-…@example.test` account:
+
+```sh
+PGDATABASE=review_video_controls_dev mix run --no-start --no-compile scripts/playback_fixture.exs
+APP_URL=https://localhost:4441 REPORT_PATH=/tmp/production-playback-room.json \
+  node scripts/production_playback_browser_test.mjs
+```
+
+The browser helper expects Chrome CDP on port 9222 and Firefox BiDi on port 9223.
+`SOLO_ONLY=1` or `CORE_ONLY=1` restricts the run and does not establish the
+five-participant target. Finish build checks before browser checks: Hologram
+environments share generated assets, so compiling another environment during a
+run invalidates its loaded chunks. Restart the app after switching builds.
+Same-machine Chrome/Firefox checks do not establish Edge/Safari coverage,
+separate-device network behavior, ad/live metadata edge cases, public TURN, or
+the complete multi-hour release soak.
+
+The full production-page run on 2026-11-20 passed all 14 checks with five
+participants (three Chrome, two Firefox), 120 settled samples over 60.845 seconds,
+**0.176 s p95 timeline drift**, **0.148 s p95 participant spread**, and **zero
+corrective seeks for every participant**. The delayed participant's measured
+snapshot round trip was 501.1–501.2 ms. No buffering interruptions occurred during
+that measurement. A previously hidden muted guest aligned in 209 ms after
+visibility return. These results meet the scoped local timing gate; they are
+not separate-device or full release certification. An earlier development run
+reported local YouTube error 5; its cause was not established, and the successful
+run does not imply that provider failures cannot occur.
+
 ## Checks
 
 Use the normal project database setup and `mix precommit`. Room tests use the
@@ -173,9 +270,12 @@ five-seat races, shared-browser replacement, guest reconnect/expiry, owner hando
 and reclaim, stale commands, targeted signaling, durable/paginated chat, concurrent
 message order, coordinator recovery, closure, and the public context boundary.
 They use supervised processes and an injected clock rather than sleeping through
-the 10/30-second deadlines. Real-browser YouTube/media behavior, account logout
-integration, desktop-browser coverage, public TURN networks, and the combined
-multi-hour soak still need verification when the transport/client is connected.
+the 10/30-second deadlines. Playback tests also cover clock projection, stale
+snapshots and generations, pending native commands, buffering, end/replay,
+seek previews, local preferences, background recovery, and unauthorized/stale
+channel commands. The browser checks above cover a local Chrome/Firefox path;
+full desktop-browser coverage, public TURN networks, and the combined multi-hour
+soak still need release verification.
 
 
 ## Conference recovery and ICE

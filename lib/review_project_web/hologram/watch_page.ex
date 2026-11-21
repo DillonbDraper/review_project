@@ -51,7 +51,7 @@ defmodule ReviewProjectWeb.Hologram.WatchPage do
       <div class="workspace-grid">
         <div class="review-column">
           <ConferencePanel cid="conference-panel" />
-          <VideoPanel cid="video-panel" />
+          <VideoPanel cid="video-panel" room_id={@room_id} />
           <WhiteboardPanel />
         </div>
         <ChatPanel cid="chat-panel" />

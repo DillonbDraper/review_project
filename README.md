@@ -65,8 +65,10 @@ loss releases capture immediately; the same page restores previously enabled
 devices after rejoining. Fresh loads start with devices off.
 
 See [conference networking](docs/conference-networking.md) for runtime relay
-configuration and local checks. Public relay deployment, Firefox background-tab
-scheduling, and cross-network/browser validation remain outstanding. Use localhost or trusted HTTPS for device access.
+configuration and local checks. Public relay deployment and cross-network/browser
+validation remain outstanding. Firefox background-tab work was closed after the
+owner could not reproduce the issue during manual verification on 2026-11-19.
+Use localhost or trusted HTTPS for device access.
 
 For a second computer on your home network, follow the
 [home-network chat guide](docs/home-network-chat.md). Use the same trusted HTTPS
@@ -177,3 +179,4 @@ Ready to run in production? Please [check our deployment guides](https://hexdocs
 * Docs: https://hexdocs.pm/phoenix
 * Forum: https://elixirforum.com/c/phoenix-forum
 * Source: https://github.com/phoenixframework/phoenix
+

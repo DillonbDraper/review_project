@@ -335,3 +335,16 @@
 @media (prefers-reduced-motion: reduce) {
   .review-workspace *, .review-workspace *::before, .review-workspace *::after { scroll-behavior: auto !important; transition: none !important; animation: none !important; }
 }
+
+/* Shared video controls stay outside the provider's unobscured frame. */
+.video-player-host { position: absolute; inset: 0; }
+.playback-controls { padding: 18px 22px; border-bottom: 1px solid #e6e9e1; }
+.playback-toolbar { display: flex; align-items: center; gap: 14px; }
+.playback-time { font-variant-numeric: tabular-nums; font-size: 12px; white-space: nowrap; }
+.playback-time span { color: #9aa995; padding-inline: 4px; }
+.playback-authority { margin-left: auto; color: var(--workspace-muted); font-size: 10px; text-align: right; }
+.playback-seek { display: block; width: 100%; margin: 17px 0; accent-color: var(--workspace-green); cursor: pointer; }
+.playback-local-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; font-size: 11px; }
+.playback-local-controls .secondary-button { min-height: 32px; padding: 7px 10px; }
+.playback-local-controls input { width: 90px; accent-color: var(--workspace-green); }
+.playback-controls input:disabled { cursor: default; opacity: .5; }

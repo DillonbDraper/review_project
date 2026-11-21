@@ -70,6 +70,32 @@ is unavailable or disallows embedding may fail with an appropriate explanation;
 the release does not promise playback of every YouTube URL. Downloading,
 scraping, or rehosting YouTube media is outside this contract.
 
+Shared video controls were selected by the project owner on 2026-11-20:
+
+- Provide video selection, play/pause, a seek bar, elapsed/duration display, and
+  volume/mute. Volume, mute, and captions are local to each participant.
+- The current playback controller may use the shared bar or native YouTube
+  play/pause/seek controls. Confidently inferred native actions update the room;
+  ambiguous changes stay local and reconcile. Follower actions do not control
+  the room. Designated-controller grants are deferred.
+- Support individual prerecorded videos and Shorts. A link containing a video
+  ID and playlist context loads only that video. Playlist-only input and live/DVR
+  playback are unsupported for this pass.
+- A locally buffering, blocked, or failed player does not pause everyone. It
+  catches up when available, with a local enable/retry action when necessary.
+- Stop at the end; the controller can replay from zero or select another video.
+- Target p95 absolute timeline drift and participant spread of at most 0.5
+  seconds during settled playback. This measures player-reported position,
+  rather than frame-accurate presentation. Preparation, buffering, autoplay
+  blocks, and recovery are measured separately. Native-action inference and
+  tighter synchronization must pass real-browser validation before production
+  integration; the target must not be silently weakened.
+
+The approved implementation plan defaults recovery acceptance to alignment
+within five seconds once the transport and player are ready and local playback
+is enabled. Verification is still required; these decisions do not claim that
+any implementation currently meets these targets.
+
 ## Explicitly deferred
 
 - Paid tiers, billing, and subscription purchase flows.
@@ -97,8 +123,8 @@ they must not be treated as already agreed:
   across different browsers/devices.
 - Empty-room expiry, room persistence, and resource cleanup.
 - Chat retention and storage.
-- The scope of YouTube playlists, live videos, and other player edge cases.
-- Measurable playback synchronization targets and acceptable recovery behavior.
+- Additional YouTube player edge cases beyond the prerecorded single-video
+  behavior and recovery target agreed above.
 
 The handoff and browser-seat policies above were explicitly accepted by the
 project owner on 2026-10-24 while starting spike 5. A reconnect within the guest

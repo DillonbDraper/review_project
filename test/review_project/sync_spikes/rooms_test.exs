@@ -38,6 +38,31 @@ defmodule ReviewProject.SyncSpikes.RoomsTest do
              )
   end
 
+  test "native intents atomically anchor transport and position with revision checks", ctx do
+    id = ctx.credentials.room_id
+    command = %{"revision" => 0, "op" => "set_playback", "position" => 42.25, "playing" => true}
+
+    assert {:ok, %{revision: 1, position: 42.25, playing: true}} =
+             Rooms.control(id, self(), command, ctx.rooms)
+
+    :atomics.put(ctx.clock, 1, 2000)
+    assert {:ok, %{position: 43.25}} = Rooms.snapshot(id, self(), ctx.rooms)
+    assert {:error, :stale_revision} = Rooms.control(id, self(), command, ctx.rooms)
+
+    for attrs <- [%{"position" => -1}, %{"playing" => "true"}, %{"position" => 86_401}] do
+      invalid = command |> Map.put("revision", 1) |> Map.merge(attrs)
+      assert {:error, :invalid_command} = Rooms.control(id, self(), invalid, ctx.rooms)
+    end
+
+    guest = start_supervised!({Agent, fn -> nil end})
+    {:ok, _, _} = Rooms.join(id, nil, guest, ctx.rooms)
+
+    assert {:error, :forbidden} =
+             Rooms.control(id, guest, Map.put(command, "revision", 1), ctx.rooms)
+
+    assert {:ok, %{revision: 1}} = Rooms.snapshot(id, self(), ctx.rooms)
+  end
+
   test "guests cannot change state; credentials and revisions are checked", ctx do
     guest = start_supervised!({Agent, fn -> nil end})
     id = ctx.credentials.room_id

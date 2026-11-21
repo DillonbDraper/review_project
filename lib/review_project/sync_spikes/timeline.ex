@@ -25,6 +25,10 @@ defmodule ReviewProject.SyncSpikes.Timeline do
       %{"op" => "pause"} ->
         {:ok, %{next | playing: false}}
 
+      %{"op" => "set_playback", "position" => value, "playing" => playing}
+      when is_number(value) and value >= 0 and value <= 86_400 and is_boolean(playing) ->
+        {:ok, %{next | position: value * 1.0, playing: playing}}
+
       %{"op" => "seek", "position" => value}
       when is_number(value) and value >= 0 and value <= 86_400 ->
         {:ok, %{next | position: value * 1.0}}

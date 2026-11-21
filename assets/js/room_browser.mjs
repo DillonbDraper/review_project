@@ -1,6 +1,7 @@
 // Native resources only. Hologram owns room/chat state and all recovery policy.
 import {Socket} from "../../deps/phoenix/priv/static/phoenix.mjs";
 import ConferenceNative from "./conference_native.mjs";
+import PlaybackNative from "./playback_native.mjs";
 
 function browser() {
   let host, transport;
@@ -17,6 +18,7 @@ function browser() {
   };
   const disconnect = () => {
     ConferenceNative.invalidate();
+    PlaybackNative.suspend();
     const prior = transport;
     transport = null;
     prior?.channel.leave();
@@ -95,7 +97,7 @@ function browser() {
         if (transport === resource) {
           // Release devices before Hologram processes the transport event.
           // Recovery decisions and component-to-component routing live in Elixir.
-          if (type === "lost") ConferenceNative.invalidate();
+          if (type === "lost" || type === "room_ended" || type === "room_restart") { ConferenceNative.invalidate(); PlaybackNative.suspend(); }
           dispatch("transport", "room-controls", {generation, type, result});
         }
       };
@@ -112,13 +114,15 @@ function browser() {
     push(event, payload, target, action, metadata) {
       const resource = transport;
       if (!resource) {
-        dispatch(action, target, {...metadata, status: "error", result: {reason: "not_joined"}});
+        const now = performance.now();
+        dispatch(action, target, {...metadata, sent_at_ms: now, received_at_ms: now, status: "error", result: {reason: "not_joined"}});
         return;
       }
+      const sent_at_ms = performance.now();
       const pending = resource.channel.push(event, payload);
       for (const status of ["ok", "error", "timeout"]) {
         pending.receive(status, result => {
-          if (transport === resource) dispatch(action, target, {...metadata, status, result: result || {}});
+          if (transport === resource) dispatch(action, target, {...metadata, sent_at_ms, received_at_ms: performance.now(), status, result: result || {}});
         });
       }
     },

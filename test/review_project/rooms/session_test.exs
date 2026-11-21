@@ -145,10 +145,26 @@ defmodule ReviewProject.Rooms.SessionTest do
     assert {:ok, %{controller_id: id}} = Session.request(ctx.session, nil, first.pid, :snapshot)
     assert id == first.reply.self_id
     assert {:ok, %{playing: false}} = control(ctx, nil, first.pid, %{"op" => "pause"})
+
+    assert {:ok, %{position: 20.5, playing: true}} =
+             control(ctx, nil, first.pid, %{
+               "op" => "set_playback",
+               "position" => 20.5,
+               "playing" => true
+             })
+
     {:ok, returning} = join_seat(ctx, ctx.scope, transport(), nil, "Owner back")
     assert returning.self_id == owner_reply.self_id
     assert returning.snapshot.controller_id == returning.self_id
     assert {:error, :not_controller} = control(ctx, nil, first.pid, %{"op" => "play"})
+
+    assert {:error, :not_controller} =
+             control(ctx, nil, first.pid, %{
+               "op" => "set_playback",
+               "position" => 0,
+               "playing" => false
+             })
+
     assert Repo.get!(Room, ctx.room.id).owner_id == ctx.scope.user.id
   end
 

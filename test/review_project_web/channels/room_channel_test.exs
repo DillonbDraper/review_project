@@ -45,6 +45,48 @@ defmodule ReviewProjectWeb.RoomChannelTest do
              )
   end
 
+  test "playback commands use current membership, authority, epoch and revisions", ctx do
+    {:ok, _, host} = join_room(ctx, ctx.scope)
+    {:ok, %{snapshot: snapshot}, guest} = join_room(ctx)
+    envelope = Map.take(snapshot, [:epoch, :revision, :authority_revision])
+    ref = push(guest, "control", Map.merge(envelope, %{op: "video", video_id: "M7lc1UVf-VE"}))
+    assert_reply ref, :error, %{reason: "not_controller"}
+    ref = push(host, "control", Map.merge(envelope, %{op: "video", video_id: "M7lc1UVf-VE"}))
+    assert_reply ref, :ok, selected
+    assert selected.video_id == "M7lc1UVf-VE"
+    envelope = Map.take(selected, [:epoch, :revision, :authority_revision])
+
+    ref =
+      push(
+        host,
+        "control",
+        Map.merge(envelope, %{op: "set_playback", position: 12.25, playing: false})
+      )
+
+    assert_reply ref, :ok, %{position: 12.25, playing: false}
+    ref = push(host, "control", Map.merge(envelope, %{op: "play"}))
+    assert_reply ref, :error, %{reason: "stale_revision"}
+    ref = push(host, "snapshot", %{})
+    assert_reply ref, :ok, current
+
+    command =
+      Map.merge(Map.take(current, [:epoch, :revision, :authority_revision]), %{
+        op: "set_playback",
+        position: -1,
+        playing: true
+      })
+
+    ref = push(host, "control", command)
+    assert_reply ref, :error, %{reason: "invalid_command"}
+    ref = push(host, "control", %{command | position: 0, authority_revision: -1})
+    assert_reply ref, :error, %{reason: "stale_authority"}
+    ref = push(host, "control", %{command | position: 0, epoch: "old"})
+    assert_reply ref, :error, %{reason: "stale_epoch"}
+    Accounts.delete_user_session_token(host.assigns.session_token)
+    ref = push(host, "control", %{command | position: 0})
+    assert_reply ref, :error, %{reason: "session_expired"}
+  end
+
   test "four guest seats preserve the owner's place", ctx do
     for _ <- 1..4, do: assert({:ok, _, _} = join_room(ctx))
     assert {:error, %{reason: "room_full"}} = join_room(ctx)

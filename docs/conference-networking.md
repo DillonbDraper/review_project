@@ -1,5 +1,8 @@
 # Conference networking and recovery
 
+See the [public STUN/TURN deployment plan](public-turn-deployment-plan.md) for the
+proposed home-hosted NixOS setup, DNS/certificates, forwarding, and public checks.
+
 Room admission works without microphone, camera, or relay availability. With no
 configuration, WebRTC tries direct connections. To provide STUN and authenticated
 TURN, set `CONFERENCE_ICE_CONFIG` to the absolute path of a server-side JSON file:
@@ -125,22 +128,20 @@ separate networks, blocked UDP, network changes, all supported desktop browsers,
 real microphone/speaker quality with YouTube audio, and a multi-hour soak. Local
 relay success does not establish those outcomes.
 
-## Remaining Hologram interoperability work
+## Firefox background-tab verification
 
-Firefox calls in two visible windows establish receive-only connections and
-exchange media. Negotiation stalled when the test put both participants in tabs
-of one window and one tab became hidden. The current Hologram JS dispatch API
-schedules each incoming action through a zero-delay timer; Firefox's background
-throttling substantially delays that signaling/operation pipeline. Native peer
-checks without Hologram did connect over the same local UDP relay.
+Status: **closed by the project owner, 2026-11-19**. The owner could not reproduce
+background-tab negotiation/recovery failure during manual Firefox testing and
+asked to mark the item done. No scheduler workaround is planned for this report.
 
-Background-tab negotiation/recovery is therefore still a release blocker for
-Firefox. Investigate a supported dispatch/scheduling path before changing this
-boundary; no monkey patch of Hologram's scheduler or private boxing APIs was
-added. Conference policy and native API sequencing remain in Elixir; this
-framework scheduling boundary is the fragile part to revisit. Verify background
-behavior in the other supported browsers as part of the browser matrix too.
+Earlier automation established media in two visible windows but stalled when
+participants used tabs of one window and one tab became hidden. A suspected
+interaction with Hologram's action scheduling was recorded at that time; the
+manual check does not establish that hypothesis or a specific code fix.
 
+Keep background-tab behavior in ordinary browser regression coverage. This closure
+does not replace the remaining public-network, Edge/Safari, real-device, and
+multi-hour verification gates.
 
 ## Local evidence (2026-10-30)
 

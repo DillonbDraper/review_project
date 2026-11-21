@@ -293,6 +293,7 @@ defmodule ReviewProjectWeb.Hologram.RoomPanelTest do
     assert updated.next_action.params.snapshot == snapshot()
     poll = conference_continuation(updated.next_action)
     assert poll.name == :poll
+    assert poll.target == "room-controls"
     assert poll.delay == 15_000
     assert poll.params.generation == updated.state.generation
   end
@@ -325,7 +326,11 @@ defmodule ReviewProjectWeb.Hologram.RoomPanelTest do
     updated = ConferencePanel.action(action.name, action.params, component)
     assert updated.next_action.name == :sync_tiles
     next = updated.next_action
-    ConferencePanel.action(next.name, next.params, updated).next_action
+    continuation = ConferencePanel.action(next.name, next.params, updated).next_action
+    assert continuation.target == "video-panel"
+    video = ReviewProjectWeb.Hologram.VideoPanel.init(%{room_id: "room"}, %Component{}, %Server{})
+
+    ReviewProjectWeb.Hologram.VideoPanel.action(continuation.name, continuation.params, video).next_action
   end
 
   defp snapshot do
@@ -333,6 +338,13 @@ defmodule ReviewProjectWeb.Hologram.RoomPanelTest do
       room_name: "Movie night",
       epoch: "epoch",
       roster_revision: 1,
+      revision: 1,
+      authority_revision: 1,
+      controller_id: "host",
+      video_id: nil,
+      playing: false,
+      position: 0,
+      server_time_ms: 0,
       seats: [],
       connected_count: 1,
       seat_count: 1

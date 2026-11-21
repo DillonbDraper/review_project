@@ -719,10 +719,36 @@ defmodule ReviewProjectWeb.Hologram.RoomPanel do
   # A component has one next action. Preserve chat/poll continuations while the
   # conference applies the same room event and binds its rendered media nodes.
   defp conference(component, event, params) do
+    next_action =
+      case component.next_action do
+        %{target: nil} = action -> %{action | target: "room-controls"}
+        action -> action
+      end
+
+    continuation =
+      if event in [:joined, :roster, :stopped] do
+        playback_params =
+          params
+          |> Map.take([:snapshot, :self_id, :mode])
+          |> Map.merge(%{
+            kind: event,
+            room_generation: component.state.generation,
+            next_action: next_action
+          })
+
+        put_action(component,
+          name: :room_event,
+          target: "video-panel",
+          params: playback_params
+        ).next_action
+      else
+        next_action
+      end
+
     params =
       Map.merge(params, %{
         generation: component.state.conference_generation,
-        next_action: component.next_action
+        next_action: continuation
       })
 
     put_action(component, name: event, target: "conference-panel", params: params)

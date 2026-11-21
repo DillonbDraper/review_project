@@ -8,6 +8,114 @@ real embedded YouTube players. It builds on the
 [single-player spike](youtube-player-spike.md). It does not implement production
 account ownership, host handoff, chat, conferencing, billing, or persistence.
 
+## Shared-controls follow-up, 2026-11-20
+
+**The native-control blocker was diagnosed and fixed in the prototype.** It was
+an application race compounded by a buffering-state bug and a test-input bug,
+not evidence that YouTube native controls cannot synchronize. The prototype
+remains development-only. Its validated behavior is now integrated separately
+into the production room workspace; see [shared video controls](rooms-backend.md#shared-video-controls)
+for the Elixir policy, native adapter, and production verification.
+
+### Confirmed causes and fixes
+
+1. **Reconciliation undid native input before its command was acknowledged.**
+   The trace recorded native Pause at 8362.9 ms, followed in the same pass by a
+   corrective seek and Play against the old, still-playing revision. The server
+   accepted Pause at 8363.9 ms. Subsequent corrective seeks repeatedly extended
+   the callback-suppression window. Trusted ArrowRight input then moved the real
+   paused video from 5.739608 to 15.739608 seconds, but the detector discarded that
+   change during suppression and correction returned it to the old position.
+   A pending native command now suspends inference and correction until its
+   authoritative reply. A broadcast arriving before the reply cannot release
+   that guard. Rejection/timeout requires a fresh snapshot instead of replaying
+   the command. Regression tests cover all three orderings, including delayed
+   replies across multiple timer ticks.
+2. **A playing seek's temporary pause/buffering cleared its position intent.**
+   Actual YouTube telemetry reported the position jump in a Paused event, then
+   Buffering, then Playing. The detector discarded the jump on entry to Buffering.
+   It now retains an observed seek through bounded buffering and commits the
+   final stable position and playing state. Ordinary buffering recovery without
+   an observed seek does not become a shared command. A regression test replays
+   the captured pause/buffer/play sequence.
+3. **The harness guessed the native Play button's position.** YouTube served
+   compact embed controls with Play/Pause in the centre of this desktop Chrome
+   player. The assumed bottom-left click did not activate Play. The harness now
+   locates the actual desktop or compact button and records trusted pointer/key
+   input and media events. Iframe DOM inspection is confined to the browser test;
+   the application continues to use the official player API.
+
+### Verification
+
+A complete real-media run passed all six native-control scenarios: Pause,
+paused Seek, Play, playing Seek, repeated scrubbing, and switching between native
+and shared controls. The saved application trace contained five native intents
+and **zero corrections between native intent and acknowledgement**. A separate
+fresh-room native-only run and a second complete run also passed all six
+scenarios: three consecutive fresh-room passes in total.
+
+The final complete passing run used Chrome 157.0.8103.78 and Firefox 160.0 on
+Linux, five participants, and at least 60 seconds per measurement:
+
+| Scenario | p95 timeline drift | p95 participant spread | Correction seeks during measurement |
+| --- | --- | --- | --- |
+| Settled playback | 0.135 s | 0.109 s | 0 for every participant |
+| Guest message delay configured to 250 ms each way | 0.137 s | 0.111 s | 0 for every participant |
+
+The configured delay uses browser timers; background throttling increased the
+actual snapshot round trips to 2,003–2,006 ms throughout the delayed measurement.
+The harness requires an observed RTT of at least 450 ms before starting this
+window and records per-participant RTT ranges. These are application-message
+delays, not a physical network test. The preceding complete run also passed
+both windows (p95 drift 0.158/0.160 s; spread 0.119/0.120 s), but its first two
+delayed-window samples still held the earlier RTT; the stronger precondition
+was added before this final run.
+
+`mix precommit`: 320 tests passed. The deterministic Node suite passed 19 tests,
+including the new session-ordering and buffering regressions. These supplement,
+rather than substitute for, the real-media results.
+
+### Reproduction and remaining boundaries
+
+Opt in at `/dev/spikes/youtube-sync?native_controls=1&tight_sync=1`.
+Without those options the historical behavior and tuning remain unchanged.
+The native option is disabled for the ownership/access experiment; its handoff
+protocol has not been integrated with this prototype. Sampling runs every 100 ms
+and coalesces inferred input after 200 ms of stability. Callback suppression
+lasts 1.2 seconds; ambiguous changes, hidden tabs and long scheduling gaps stay
+local. Tight synchronization uses 0.2-second playing and 0.15-second paused
+correction thresholds with a one-second seek cooldown. This remains heuristic
+native-input inference, not proof of user intent for every provider interruption.
+
+With HTTPS and the isolated Chrome/Firefox debugging profiles from the original
+instructions running:
+
+```sh
+APP_URL=https://localhost:4001 \
+  REPORT_PATH=/tmp/youtube-controls-gate.json \
+  node scripts/youtube_controls_gate_browser_test.mjs
+node --test --test-isolation=none scripts/youtube_native_policy.test.mjs \
+  scripts/youtube_sync_session.test.mjs scripts/youtube_sync_policy.test.mjs \
+  scripts/youtube_probe.test.mjs
+```
+
+Set `NATIVE_ONLY=1` for a fresh-room native-controls repeat without the two timing
+windows; the report explicitly identifies that narrower scope. Reports include
+application observations, pending intent/suppression state, native command
+acknowledgements, correction calls, provider input/media events and raw samples.
+Application trace retention is bounded to 2,400 entries and its DOM accessor is
+removed on disposal. Finish build/precommit tasks and restart the server before
+browser runs: Hologram environments share generated static assets.
+
+Five tabs on one machine do not establish separate-device/network, Edge or Safari
+coverage. Ads and broader recovery cases still need release verification.
+The main workspace now implements the shared bar, production channel operation,
+controller handoff, end/replay, and local audio controls. Production policy lives
+in Hologram/Elixir with native resources in the provider adapter; it does not
+import this JS prototype. No routes,
+Phoenix pipelines, authentication scopes or LiveView sessions were added: the
+spike uses existing development-only Hologram pages and its existing socket.
+
 ## Running the experiment
 
 Use the HTTPS certificate and `mix holo` setup from the single-player write-up.

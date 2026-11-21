@@ -68,9 +68,12 @@ rollback workaround remains in Elixir and is covered by the browser regression.
 
 Public relay deployment, multi-hour soak, and the supported-browser matrix
 remain outstanding. Recovery and same-page device restoration are now implemented;
-see [conference networking](conference-networking.md) for policy, configuration,
-and the known Firefox background-dispatch limitation. Existing
-shared YouTube playback work is also separate.
+see [conference networking](conference-networking.md) for policy and configuration,
+and the [public deployment plan](public-turn-deployment-plan.md) for the proposed
+home-hosted NixOS relay. Firefox background-tab work is closed following the
+owner's manual check on 2026-11-19; the owner could not reproduce the earlier
+automation issue and asked to mark it done. The broader browser matrix and shared
+YouTube playback integration remain separate work.
 
 ## Outcome
 
