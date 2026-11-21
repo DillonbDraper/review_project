@@ -19,6 +19,7 @@ defmodule ReviewProjectWeb.Hologram.PlaybackState do
       source_request: 0,
       serial: 0,
       pending: nil,
+      queued: nil,
       snapshot_request: nil,
       next_poll: 0,
       calibrated: room_id == "",
@@ -160,7 +161,12 @@ defmodule ReviewProjectWeb.Hologram.PlaybackState do
     end
   end
 
-  def event(state, :mounted, %{generation: generation}) do
+  def event(state, event, params) do
+    {state, effects} = transition(state, event, params)
+    {expect_player(state, effects), effects}
+  end
+
+  defp transition(state, :mounted, %{generation: generation}) do
     state = %{
       state
       | generation: generation,
@@ -168,6 +174,7 @@ defmodule ReviewProjectWeb.Hologram.PlaybackState do
         sample: local_sample(state),
         native: PlaybackIntent.new(),
         pending: nil,
+        queued: nil,
         preview: nil,
         loading: false,
         snapshot_request: nil,
@@ -177,7 +184,7 @@ defmodule ReviewProjectWeb.Hologram.PlaybackState do
     reconcile(state)
   end
 
-  def event(state, :joined, params) do
+  defp transition(state, :joined, params) do
     if params.room_generation >= state.room_generation do
       state = %{
         new(state.room_id)
@@ -198,7 +205,7 @@ defmodule ReviewProjectWeb.Hologram.PlaybackState do
     end
   end
 
-  def event(state, :stopped, params) do
+  defp transition(state, :stopped, params) do
     if params.room_generation >= state.room_generation do
       resume = params.mode == "recover" and (state.enabled or state.resume_enabled)
 
@@ -216,7 +223,7 @@ defmodule ReviewProjectWeb.Hologram.PlaybackState do
     end
   end
 
-  def event(state, event, params) do
+  defp transition(state, event, params) do
     if Map.get(params, :generation, state.generation) == state.generation,
       do: handle(state, event, params),
       else: {state, []}
@@ -257,7 +264,7 @@ defmodule ReviewProjectWeb.Hologram.PlaybackState do
         else: state
 
     {state, native_effects} = infer(state)
-    {state, effects} = reconcile(state, true)
+    {state, effects} = continue(state, true)
 
     {state, poll} =
       if state.connected and not solo?(state) and sample.now >= state.next_poll,
@@ -282,7 +289,14 @@ defmodule ReviewProjectWeb.Hologram.PlaybackState do
 
   defp handle(state, :resolved, params) do
     if params.request == state.source_request and state.loading and controller?(state) do
-      state = %{state | loading: false}
+      state = %{
+        state
+        | loading: false,
+          native: PlaybackIntent.reset(),
+          queued: nil,
+          next_check: 0
+      }
+
       submit(state, %{op: "video", video_id: params.video_id})
     else
       {state, []}
@@ -306,7 +320,7 @@ defmodule ReviewProjectWeb.Hologram.PlaybackState do
     state = %{
       state
       | enabled: true,
-        native: PlaybackIntent.commanded(state.native, state.sample.now)
+        native: PlaybackIntent.reset()
     }
 
     # Execute play directly in this local gesture rather than awaiting the room.
@@ -336,7 +350,9 @@ defmodule ReviewProjectWeb.Hologram.PlaybackState do
             true -> %{op: "pause"}
           end
 
-        {state, effects} = submit(%{state | enabled: true}, command)
+        {state, effects} =
+          submit(%{state | enabled: true, native: PlaybackIntent.reset(), queued: nil}, command)
+
         # The controller's click also supplies local browser activation. The
         # pending command already protects this optimistic action from echoes.
         operation = if playing, do: "play", else: "pause"
@@ -363,13 +379,17 @@ defmodule ReviewProjectWeb.Hologram.PlaybackState do
     authority = state.desired && state.desired.authority_revision
     revision = state.desired && state.desired.revision
 
-    if is_number(position) and position >= 0 and state.sample.duration > 0 and
+    if controller?(state) and state.pending == nil and is_number(position) and position >= 0 and
+         state.sample.duration > 0 and
          Map.get(params, :authority_revision, authority) == authority and
          Map.get(params, :revision, revision) == revision do
-      submit(%{state | preview: nil}, %{
-        op: "seek",
-        position: min(position, state.sample.duration)
-      })
+      submit(
+        %{state | preview: nil, native: PlaybackIntent.reset(), queued: nil, next_check: 0},
+        %{
+          op: "seek",
+          position: min(position, state.sample.duration)
+        }
+      )
     else
       {%{state | preview: nil}, []}
     end
@@ -411,7 +431,7 @@ defmodule ReviewProjectWeb.Hologram.PlaybackState do
             do: %{state | pending: nil},
             else: state
 
-        reconcile(state)
+        continue(state)
       else
         {%{
            state
@@ -429,7 +449,7 @@ defmodule ReviewProjectWeb.Hologram.PlaybackState do
     if state.pending != nil and state.pending.id == params.request do
       if params.status == "ok" do
         {state, _} = accept(state, params.result)
-        reconcile(%{state | pending: nil, error: ""})
+        continue(%{state | pending: nil, error: ""})
       else
         state = %{
           state
@@ -449,6 +469,59 @@ defmodule ReviewProjectWeb.Hologram.PlaybackState do
 
   defp local_sample(state),
     do: Map.merge(empty_sample(), Map.take(state.sample, [:volume, :muted]))
+
+  defp expect_player(state, effects) do
+    expected =
+      Enum.reduce(effects, %{position: nil, playing: nil}, fn
+        {:native, "seek", position}, expected -> %{expected | position: position}
+        {:native, "play", _}, expected -> %{expected | playing: true}
+        {:native, "pause", _}, expected -> %{expected | playing: false}
+        _, expected -> expected
+      end)
+
+    if expected.position != nil or expected.playing != nil,
+      do: %{state | native: PlaybackIntent.commanded(state.native, state.sample, expected)},
+      else: state
+  end
+
+  defp inferred(state, command) do
+    if state.pending != nil,
+      do: {%{state | queued: %{command: command, at: state.sample.now}}, []},
+      else: submit(state, command)
+  end
+
+  defp intent_playing(state) do
+    command =
+      cond do
+        state.queued != nil -> state.queued.command
+        state.pending != nil -> state.pending.command
+        true -> %{}
+      end
+
+    case command do
+      %{op: "play"} -> true
+      %{op: "pause"} -> false
+      %{playing: playing} -> playing
+      _ -> state.desired.playing
+    end
+  end
+
+  defp continue(state, fresh? \\ false) do
+    if state.calibrated and state.queued != nil and state.pending == nil and
+         state.native.pending == nil and
+         controller?(state) do
+      command = state.queued.command
+
+      elapsed =
+        if command.playing and state.sample.state == 1,
+          do: max(0, state.sample.now - state.queued.at) / 1000,
+          else: 0
+
+      submit(state, %{command | position: command.position + elapsed})
+    else
+      reconcile(state, fresh?)
+    end
+  end
 
   defp snapshot(state) do
     if state.snapshot_request == nil do
@@ -483,6 +556,11 @@ defmodule ReviewProjectWeb.Hologram.PlaybackState do
         | desired: incoming,
           force_seek: state.force_seek or force,
           pending: if(authority_changed, do: nil, else: state.pending),
+          queued:
+            if(authority_changed or (old != nil and incoming.video_id != old.video_id),
+              do: nil,
+              else: state.queued
+            ),
           preview:
             if(authority_changed or (old != nil and incoming.video_id != old.video_id),
               do: nil,
@@ -490,8 +568,8 @@ defmodule ReviewProjectWeb.Hologram.PlaybackState do
             ),
           loading: if(authority_changed, do: false, else: state.loading),
           native:
-            if(changed,
-              do: PlaybackIntent.commanded(state.native, state.sample.now),
+            if(authority_changed or (old != nil and incoming.video_id != old.video_id),
+              do: PlaybackIntent.reset(),
               else: state.native
             )
       }
@@ -506,7 +584,7 @@ defmodule ReviewProjectWeb.Hologram.PlaybackState do
     if controller?(state) and state.pending == nil and
          (state.desired != nil or command.op == "video") do
       now = state.sample.now
-      state = %{state | native: PlaybackIntent.commanded(state.native, now), error: ""}
+      state = %{state | error: "", queued: nil}
 
       if solo?(state) do
         old =
@@ -534,14 +612,19 @@ defmodule ReviewProjectWeb.Hologram.PlaybackState do
             "pause" -> %{next | playing: false}
           end
 
-        reconcile(%{state | desired: next, force_seek: command.op in ["seek", "set_playback"]})
+        reconcile(%{
+          state
+          | desired: next,
+            force_seek: command.op in ["video", "seek", "set_playback"]
+        })
       else
         id = state.serial + 1
 
         payload =
           Map.merge(command, Map.take(state.desired, [:epoch, :revision, :authority_revision]))
 
-        {%{state | serial: id, pending: %{id: id, resync: false}}, [{:control, payload, id}]}
+        {%{state | serial: id, pending: %{id: id, resync: false, command: command}},
+         [{:control, payload, id}]}
       end
     else
       {state, []}
@@ -550,31 +633,32 @@ defmodule ReviewProjectWeb.Hologram.PlaybackState do
 
   defp infer(state) do
     cond do
-      not state.connected or state.desired == nil or not controller?(state) or
-        state.pending != nil or state.sample.error != "" or state.sample.live ->
+      not state.connected or state.desired == nil or state.sample.error != "" or state.sample.live or
+          state.sample.video_id != state.desired.video_id ->
         {state, []}
 
-      state.sample.ready and state.sample.video_id == state.desired.video_id and
+      controller?(state) and state.sample.ready and state.native.expected == nil and
         state.sample.state == 0 and state.desired.playing and state.sample.duration > 0 and
-        state.sample.now >= state.native.suppressed_until and not state.sample.blocked and
+        not state.sample.blocked and
           state.sample.error == "" ->
-        submit(state, %{op: "set_playback", position: state.sample.duration, playing: false})
+        inferred(state, %{op: "set_playback", position: state.sample.duration, playing: false})
 
-      state.sample.ready and state.sample.focused and not state.sample.hidden and
+      controller?(state) and state.native.expected == nil and state.sample.ready and
+        state.sample.focused and not state.sample.hidden and
         state.sample.state == 1 and state.sample.position < 1 and not state.desired.playing and
         state.sample.duration > 0 and state.desired.position >= state.sample.duration - 0.35 ->
-        submit(state, %{op: "set_playback", position: state.sample.position, playing: true})
+        inferred(state, %{op: "set_playback", position: state.sample.position, playing: true})
 
       true ->
         sample =
           Map.merge(state.sample, %{
             controller: controller?(state),
-            desired_playing: state.desired.playing
+            desired_playing: intent_playing(state)
           })
 
         {intent, command} = PlaybackIntent.observe(state.native, sample)
         state = %{state | native: intent}
-        if command, do: submit(state, Map.put(command, :op, "set_playback")), else: {state, []}
+        if command, do: inferred(state, Map.put(command, :op, "set_playback")), else: {state, []}
     end
   end
 
@@ -604,18 +688,19 @@ defmodule ReviewProjectWeb.Hologram.PlaybackState do
            state
            | loaded_video: id,
              sample: %{state.sample | ready: false, duration: 0, position: 0},
-             native: PlaybackIntent.commanded(state.native, now)
+             native: PlaybackIntent.reset()
          }, [{:load, id}]}
-
-      state.pending != nil or state.native.pending != nil ->
-        {state, []}
 
       not fresh? or (state.sample.hidden and state.sample.muted) ->
         {state, []}
 
       not state.sample.preparing and state.sample.video_id not in ["", id] and
           state.sample.error == "" ->
-        {%{state | native: PlaybackIntent.commanded(state.native, now)}, [{:load, id}]}
+        {%{state | native: PlaybackIntent.reset()}, [{:load, id}]}
+
+      state.pending != nil or state.queued != nil or state.native.pending != nil or
+          state.native.expected != nil ->
+        {state, []}
 
       not state.calibrated or not state.sample.ready or not state.enabled or
         state.sample.blocked or state.sample.error != "" or state.sample.live ->
@@ -625,7 +710,7 @@ defmodule ReviewProjectWeb.Hologram.PlaybackState do
         {state, []}
 
       state.sample.video_id != id ->
-        {%{state | native: PlaybackIntent.commanded(state.native, now)}, [{:load, id}]}
+        {%{state | native: PlaybackIntent.reset()}, [{:load, id}]}
 
       true ->
         correct(state)
@@ -670,12 +755,7 @@ defmodule ReviewProjectWeb.Hologram.PlaybackState do
         {state, effects}
       end
 
-    state = %{
-      state
-      | force_seek: false,
-        native:
-          if(effects != [], do: PlaybackIntent.commanded(state.native, now), else: state.native)
-    }
+    state = %{state | force_seek: false}
 
     {state, effects}
   end

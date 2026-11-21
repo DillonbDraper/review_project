@@ -168,9 +168,14 @@ Uploads and other providers remain deferred by the release contract.
 `PlaybackState` owns the client timeline, authority checks, correction policy,
 pending commands, local preferences, and recovery in Elixir. `PlaybackIntent`
 conservatively infers controller input from normalized observations: foreground
-iframe focus, position discontinuities, stable transport state, bounded buffering,
-and suppression after application commands. Ambiguous events and follower
-actions reconcile locally. End-of-video commits a paused timeline at duration;
+iframe focus, position discontinuities, stable transport state, and seek buffering.
+Only SDK calls create an expected response (position and/or transport mode).
+Matching responses clear that expectation immediately; a different position can
+supersede it as new input. Expectations expire after five seconds so failed SDK
+calls cannot block recovery indefinitely. Accepting a native action or receiving
+its room acknowledgement does not start an input-suppression timer.
+Ambiguous events and follower actions reconcile locally. End-of-video commits a
+paused timeline at duration;
 Replay atomically starts from zero. The final frame can precede the SDK duration,
 so ended players are not repeatedly corrected for that small difference.
 
@@ -202,11 +207,41 @@ more than 500 ms are discarded. Correction tolerances are 0.2 seconds playing
 and 0.15 seconds paused, with a one-second seek cooldown and buffering guards.
 Hidden muted tabs defer corrections, then request a fresh snapshot and catch up
 when visible. Inferred commands suspend correction until their acknowledgement;
-rejection requires a new snapshot, with no blind command replay. Delayed seek
+newer native input continues to be observed and coalesces to the latest intent
+while that command is in flight. It submits against the acknowledged revision,
+before correction can roll it back. Source/authority changes and lifecycle resets
+discard this queued input. Rejection requires a new snapshot, with no blind
+command replay. Delayed seek
 commits carry the displayed generation and revisions so they cannot cross a
 source or authority change.
 
+Native seeks retain the intended playing state from before the seek, including
+through temporary Paused/Buffering states and buffering longer than five seconds.
+Once a seek settles at a paused frame, a previously playing timeline resumes it
+locally; a previously paused timeline stays paused. Application seek requests
+also bypass the next routine correction interval so their first SDK seek is
+issued on the next fresh sample.
+
 ### Browser verification
+
+`scripts/playback_native_interaction_browser_test.mjs` covers immediate native
+Pause/Play, a second seek immediately after the first is accepted, a seek burst,
+and seeking while paused on the standalone page. It deliberately exercises the
+old 1.2-second suppression window. Its Chrome path also performs real native
+progress-bar seeks with delayed media delivery, requiring actual position jumps
+and buffering, then playing-state recovery without an application-issued Pause.
+It records SDK samples and application commands in its JSON report without
+changing application playback policy. Firefox covers the rapid keyboard cases.
+
+```sh
+APP_URL=https://localhost:4461 REPORT_PATH=/tmp/playback-native-chrome.json \
+  node scripts/playback_native_interaction_browser_test.mjs
+BROWSER=firefox APP_URL=https://localhost:4461 REPORT_PATH=/tmp/playback-native-firefox.json \
+  node scripts/playback_native_interaction_browser_test.mjs
+```
+
+The helper uses the same browser debug ports as below; override them with
+`CHROME_DEBUG_URL` and `FIREFOX_DEBUG_URL` when using other local ports.
 
 `scripts/production_playback_browser_test.mjs` exercises the actual workspace,
 login/admission, room transport, real YouTube media, native trusted input,

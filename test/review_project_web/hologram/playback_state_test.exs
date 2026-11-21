@@ -145,7 +145,7 @@ defmodule ReviewProjectWeb.Hologram.PlaybackStateTest do
           Map.merge(base, %{now: 500, position: if(state == 1, do: 30.2, else: 30), state: state})
         )
 
-      assert command.playing == (state == 1)
+      assert command.playing
     end
   end
 
