@@ -4,8 +4,26 @@ defmodule ReviewProjectWeb.Hologram.AccountMenuTest do
   import ReviewProject.AccountsFixtures
 
   alias ReviewProject.Accounts
+  alias Hologram.Component
+  alias ReviewProjectWeb.Hologram.AccountMenu
 
   @remember_me_cookie "_review_project_web_user_remember_me"
+
+  test "Hologram owns profile opening and dismissal" do
+    component = %Component{state: %{email: "host@example.test", menu_open: false}}
+    opened = AccountMenu.action(:toggle, %{}, component)
+    assert opened.state.menu_open
+    refute AccountMenu.action(:toggle, %{}, opened).state.menu_open
+    refute AccountMenu.action(:close, %{}, opened).state.menu_open
+    refute AccountMenu.action(:escape, %{}, opened).state.menu_open
+
+    deferred = AccountMenu.action(:check_focus_later, %{}, opened)
+    assert deferred.next_action.name == :check_focus
+    assert deferred.next_action.delay > 0
+
+    guest = %Component{state: %{email: nil, menu_open: false}}
+    refute AccountMenu.action(:toggle, %{}, guest).state.menu_open
+  end
 
   test "links guests to log in and sign up", %{conn: conn} do
     document = conn |> get("/") |> html_response(200) |> LazyHTML.from_document()
@@ -24,6 +42,26 @@ defmodule ReviewProjectWeb.Hologram.AccountMenuTest do
       document = conn |> html_response(200) |> LazyHTML.from_document()
 
       assert document |> LazyHTML.query("#account-email") |> LazyHTML.text() == user.email
+
+      assert document
+             |> LazyHTML.query("#profile-menu:not([open]) #profile-menu-trigger")
+             |> Enum.count() == 1
+
+      assert Enum.empty?(LazyHTML.query(document, "#profile-menu[data-profile-menu]"))
+
+      assert LazyHTML.attribute(
+               LazyHTML.query(document, "#profile-menu-trigger"),
+               "aria-expanded"
+             ) == ["false"]
+
+      assert document |> LazyHTML.query("#profile-menu-popover #account-settings") |> Enum.count() ==
+               1
+
+      assert document |> LazyHTML.query("#profile-menu-popover #log-out-form") |> Enum.count() ==
+               1
+
+      assert document |> LazyHTML.query("#profile-menu-trigger img") |> LazyHTML.attribute("src") ==
+               ["/images/user_silhoutte.svg"]
 
       assert document
              |> LazyHTML.query(~s|#account-settings[href="/users/settings"]|)

@@ -1,5 +1,5 @@
 defmodule ReviewProjectWeb.Hologram.WatchPage do
-  @moduledoc "Video review scaffold with independently owned player, chat, and whiteboard."
+  @moduledoc "Video review workspace with conferencing, playback, and chat."
   use Hologram.Page
 
   alias ReviewProjectWeb.Hologram.{
@@ -9,7 +9,6 @@ defmodule ReviewProjectWeb.Hologram.WatchPage do
     RoomPanel,
     UserAuth,
     VideoPanel,
-    WhiteboardPanel,
     WorkspaceLayout
   }
 
@@ -26,40 +25,23 @@ defmodule ReviewProjectWeb.Hologram.WatchPage do
     ~HOLO"""
     <header class="workspace-header">
       <div class="workspace-shell flex items-center justify-between gap-4">
-        <a id="workspace-home" href="/" class="wordmark" aria-label="Review workspace home">
-          <span class="brand-mark" aria-hidden="true">r.</span>
-          review<span class="wordmark-divider" aria-hidden="true"></span><span class="wordmark-label">Workspace</span>
-        </a>
+          <span class="brand-mark" aria-hidden="true">r</span>
         <div class="workspace-header-actions">
-          <span class="session-badge"><span class="status-dot" aria-hidden="true"></span>{%if @room_id == ""}Your workspace{%else}Room workspace{/if}</span>
           <AccountMenu cid="account-menu" />
         </div>
       </div>
     </header>
 
     <main id="workspace" class="workspace-shell">
-      <div class="workspace-intro">
-        <div>
-          <p class="eyebrow">A SPACE TO LOOK CLOSER</p>
-          <h1>Watch. Discuss. Make room for ideas.</h1>
-          <p class="intro-description">Bring a video, collect your thoughts, and keep the conversation in view.</p>
-        </div>
-      </div>
-
       <RoomPanel cid="room-controls" room_id={@room_id} />
 
       <div class="workspace-grid">
-        <div class="review-column">
-          <ConferencePanel cid="conference-panel" />
-          <VideoPanel cid="video-panel" room_id={@room_id} />
-          <WhiteboardPanel />
-        </div>
+        <ConferencePanel cid="conference-panel" />
+        <VideoPanel cid="video-panel" room_id={@room_id} />
         <ChatPanel cid="chat-panel" />
       </div>
 
       <footer class="workspace-footer">
-        <span>A little focus goes a long way.</span>
-        <span>Video + conversation + a space to think</span>
       </footer>
     </main>
     """

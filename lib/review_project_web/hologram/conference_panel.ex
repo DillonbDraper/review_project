@@ -12,11 +12,7 @@ defmodule ReviewProjectWeb.Hologram.ConferencePanel do
   @impl Component
   def template do
     ~HOLO"""
-    <section id="conference-panel" hidden={!@connected} aria-labelledby="conference-heading" class="workspace-card conference-panel">
-      <div class="conference-heading">
-        <h2 id="conference-heading">In this review <span class="conference-count">{length(@tiles)}</span></h2>
-        <span class="panel-meta">ROOM CALL</span>
-      </div>
+    <section id="conference-panel" hidden={!@connected} aria-label="Room participants" class="workspace-card conference-panel">
       <div id="conference-tiles" class="conference-tiles" aria-label="Call participants">
         {%for tile <- @tiles}
           <article id="conference-tile-{tile.id}" class="conference-tile" data-seat-id={tile.id} data-local={if(tile.local?, do: "true", else: "false")} data-video={if(tile.video?, do: "true", else: "false")} aria-labelledby="conference-name-{tile.id}">
@@ -32,7 +28,6 @@ defmodule ReviewProjectWeb.Hologram.ConferencePanel do
       </div>
       <div class="conference-controls">
       {%if @supported}
-        <p id="conference-status" role="status" class="field-hint">Your camera and microphone are optional.</p>
         <div class="conference-buttons">
           <button id="conference-microphone" type="button" class="secondary-button" $click="toggle_microphone" aria-pressed={if(@microphone == "on", do: "true", else: "false")} disabled={!@connected}>
             {%if @microphone == "starting"}Cancel microphone request{%else}{%if @microphone == "on"}Mute microphone{%else}Turn on microphone{/if}{/if}

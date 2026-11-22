@@ -1,5 +1,8 @@
 import Config
 
+# Lifecycle tests start the worker explicitly with an injected clock and sandbox.
+config :review_project, :room_expiry_worker, enabled: false
+
 # Compile and start the real Hologram runtime for endpoint integration tests.
 System.put_env("HOLOGRAM_START", "1")
 

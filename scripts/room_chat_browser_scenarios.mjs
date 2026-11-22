@@ -32,8 +32,8 @@ export async function verifyRoomChat({host, guest, wait, call, roomURL}) {
   console.log("PASS: shared chat in both directions, trusted names, escaped text and no duplicate echo");
 
   await guest.fill("#chat-draft", "😀é");
-  await wait(guest, "document.querySelector('#chat-draft-count').textContent === '3 / 2000'", "Unicode character counter");
-  await guest.fill("#chat-draft", "x".repeat(2001));
+  await wait(guest, "document.querySelector('#chat-draft-count').textContent === '3 / 1000'", "Unicode character counter");
+  await guest.fill("#chat-draft", "x".repeat(1001));
   await wait(guest, "document.querySelector('#send-message').disabled", "oversized message blocked");
   await guest.fill("#chat-draft", "");
   await guest.click("#send-message");

@@ -12,6 +12,8 @@ defmodule ReviewProject.Rooms.Room do
     field :next_join_sequence, :integer, default: 1
     field :next_chat_sequence, :integer, default: 1
     field :closed_at, :utc_datetime_usec
+    field :expires_at, :utc_datetime_usec
+    field :expired_at, :utc_datetime_usec
     has_many :seats, ReviewProject.Rooms.Seat
     has_many :invitations, ReviewProject.Rooms.Invitation
     has_many :messages, ReviewProject.Rooms.ChatRoomMessage

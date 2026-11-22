@@ -29,26 +29,22 @@ defmodule ReviewProjectWeb.Hologram.ChatPanel do
 
   @impl Component
   def template do
+    # Native maxlength counts UTF-16 units; allow 1000 supplementary codepoints.
     ~HOLO"""
     <aside id="chat-panel" class="workspace-card chat-panel" aria-labelledby="chat-heading" data-connected={@connected}>
       <div class="panel-heading">
-        <div class="flex items-center gap-3">
-          <span class="section-number">02</span>
-          <h2 id="chat-heading">The conversation</h2>
-        </div>
-        <span id="chat-count" class="chat-count" aria-label="Messages shown">{length(@messages)}</span>
+        <h2 id="chat-heading">Chat</h2>
       </div>
 
-      <div class="chat-session-note"><span class="status-dot" aria-hidden="true"></span><span id="chat-status" role="status">{@status}</span><span>ROOM CHAT</span></div>
+      <div class="chat-session-note"><span class="status-dot" aria-hidden="true"></span><span id="chat-status" role="status">{@status}</span></div>
 
       <div id="chat-messages" class="chat-messages" role="log" aria-label="Chat messages" aria-live="polite" aria-relevant="additions" tabindex="0">
         {%if @messages == []}
           <div id="chat-empty" class="chat-empty">
             <div class="conversation-art" aria-hidden="true"><span></span><span></span><span></span></div>
-            <h3>Start with a thought.</h3>
-            <p>Questions, observations, moments worth sharing. Everyone in this room can join the conversation.</p>
+            <h3>Chat Space</h3>
             <span class="chat-empty-rule" aria-hidden="true"></span>
-            <p class="chat-empty-caption">A little conversation goes a long way.</p>
+            <p class="chat-empty-caption">Talk about the video, or anything else.</p>
           </div>
         {/if}
         {%for message <- @messages}
@@ -66,12 +62,11 @@ defmodule ReviewProjectWeb.Hologram.ChatPanel do
         <form id="chat-form" $submit="send_message">
           <label for="chat-draft" class="field-label">Your message</label>
           <div class="chat-composer">
-            <textarea id="chat-draft" name="message" value={@draft} $input="update_draft" placeholder="What caught your attention?" rows="3" maxlength="4000" disabled={!@connected} aria-describedby="chat-help chat-error" aria-invalid={if(@error != "", do: "true", else: "false")}></textarea>
-            <div class="composer-bottom"><span id="chat-draft-count">{@draft_length} / 2000</span><button id="send-message" type="submit" class="primary-button" disabled={!@connected || @sending || @draft_length > 2000}>{%if @sending}Sending…{%else}Send message{/if}</button></div>
+            <textarea id="chat-draft" name="message" value={@draft} $input="update_draft" placeholder="What caught your attention?" rows="3" maxlength="2000" disabled={!@connected} aria-describedby="chat-draft-count chat-error" aria-invalid={if(@error != "", do: "true", else: "false")}></textarea>
+            <div class="composer-bottom"><span id="chat-draft-count">{@draft_length} / 1000</span><button id="send-message" type="submit" class="primary-button" disabled={!@connected || @sending || @draft_length > 1000}>{%if @sending}Sending…{%else}Send message{/if}</button></div>
           </div>
           <p id="chat-delivery-status" role="status" class="field-hint">{@delivery_status}</p>
           <p id="chat-error" role="alert" class="field-error">{@error}</p>
-          <p id="chat-help" class="field-hint">Shared with everyone in this room. The full conversation returns when you rejoin.</p>
         </form>
       </div>
     </aside>
@@ -119,7 +114,7 @@ defmodule ReviewProjectWeb.Hologram.ChatPanel do
       messages: messages,
       generation: component.state.generation + 1,
       uncertain: uncertain,
-      status: "Connected to the conversation",
+      status: "Connected",
       delivery_status: if(uncertain, do: "Delivery not confirmed", else: ""),
       error: if(uncertain, do: uncertain_text(), else: "")
     )
@@ -163,8 +158,8 @@ defmodule ReviewProjectWeb.Hologram.ChatPanel do
       body == "" ->
         put_state(component, error: "Write a message before sending.")
 
-      length(String.to_charlist(body)) > 2000 ->
-        put_state(component, error: "Keep your message to 2000 characters or fewer.")
+      length(String.to_charlist(body)) > 1000 ->
+        put_state(component, error: "Keep your message to 1000 characters or fewer.")
 
       String.contains?(body, <<0>>) ->
         put_state(component, error: "Messages cannot contain null characters.")

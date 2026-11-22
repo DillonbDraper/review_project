@@ -87,7 +87,7 @@ defmodule ReviewProjectWeb.Hologram.RoomPanel do
           <div class="room-actions">
             {%if @joined}
               <button id="open-invitation" type="button" class="primary-button" $click="open_invitation">Invite people</button>
-              <button id="leave-room" type="button" class="secondary-button" $click="leave">Leave room</button>
+              <button id="leave-room" type="button" class="secondary-button" $click="leave" disabled={@busy}>{%if @busy}Leaving…{%else}Leave room{/if}</button>
             {%else}
               <button id="open-join-room" type="button" class="primary-button" $click="open_join" disabled={@busy}>Join room</button>
               <a href="/" class="secondary-button">Back home</a>
@@ -442,7 +442,7 @@ defmodule ReviewProjectWeb.Hologram.RoomPanel do
         component
 
       params.status == "ok" ->
-        ended(component, %{reason: "left"})
+        leave_completed(component)
 
       true ->
         put_state(component, busy: false, error: "Couldn’t confirm leaving. Please try again.")
@@ -633,6 +633,7 @@ defmodule ReviewProjectWeb.Hologram.RoomPanel do
       else: component
   end
 
+  defp transport("room_ended", %{reason: "left"}, component), do: leave_completed(component)
   defp transport("room_ended", error, component), do: ended(component, error)
   defp transport("refused", error, component), do: refused(component, error)
 
@@ -673,6 +674,12 @@ defmodule ReviewProjectWeb.Hologram.RoomPanel do
       params: %{retry: true, generation: generation, status: "Reconnecting to room chat…"}
     )
     |> stop_conference("recover")
+  end
+
+  defp leave_completed(component) do
+    component = ended(component, %{reason: "left"})
+    JS.call(:Browser, :navigate, ["/"])
+    component
   end
 
   defp ended(component, error) do

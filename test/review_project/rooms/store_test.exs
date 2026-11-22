@@ -130,8 +130,8 @@ defmodule ReviewProject.Rooms.StoreTest do
           nil,
           " ",
           "bad\x00body",
-          String.duplicate("x", 2_001),
-          String.duplicate("e\u0301", 1_001)
+          String.duplicate("x", 1_001),
+          String.duplicate("e\u0301", 501)
         ] do
       assert {:error, %Ecto.Changeset{}} =
                Store.append_message(room.id, seat.id, seat.connection_generation, %{body: body})
@@ -214,6 +214,23 @@ defmodule ReviewProject.Rooms.StoreTest do
 
     assert {:error, changeset} = Repo.insert(changeset)
     assert errors_on(changeset).sender_seat_id != []
+  end
+
+  test "database rejects new messages over 1000 codepoints even without changeset validation" do
+    %{room: room} = room_fixture()
+
+    changeset =
+      %ChatRoomMessage{
+        room_id: room.id,
+        sender_display_name: "Host",
+        sequence: 1,
+        body: String.duplicate("😀", 1001)
+      }
+      |> Ecto.Changeset.change()
+      |> Ecto.Changeset.check_constraint(:body, name: :chat_room_messages_body_length)
+
+    assert {:error, changeset} = Repo.insert(changeset)
+    assert errors_on(changeset).body != []
   end
 
   test "database capacity and owner slot constraints reject a sixth slot" do

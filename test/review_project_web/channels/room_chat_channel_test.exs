@@ -15,6 +15,12 @@ defmodule ReviewProjectWeb.RoomChatChannelTest do
     fixture
   end
 
+  test "an overdue invitation returns an expiry reason before background cleanup", ctx do
+    past = DateTime.add(DateTime.utc_now(), -1, :second)
+    Repo.update!(Ecto.Changeset.change(ctx.room, expires_at: past))
+    assert {:error, %{reason: "room_expired"}} = join_room(ctx, nil, "Guest")
+  end
+
   test "committed chat is acknowledged, broadcast to both participants and stored with trusted attribution",
        ctx do
     {:ok, %{self_id: sender}, host} = join_room(ctx, ctx.scope, "Alex")
@@ -61,14 +67,14 @@ defmodule ReviewProjectWeb.RoomChatChannelTest do
   test "blank, oversized and null-containing messages fail without writing history", ctx do
     {:ok, _, guest} = join_room(ctx, nil, "Guest")
 
-    for body <- ["  \n ", String.duplicate("a", 2001), "not\0text"] do
+    for body <- ["  \n ", String.duplicate("a", 1001), "not\0text"] do
       ref = push(guest, "chat_send", %{"body" => body})
       assert_reply ref, :error, %{reason: "validation", errors: %{body: [_ | _]}}
     end
 
     ref = push(guest, "chat_history", %{})
     assert_reply ref, :ok, []
-    body = String.duplicate("😀", 2000)
+    body = String.duplicate("😀", 1000)
     ref = push(guest, "chat_send", %{"body" => body})
     assert_reply ref, :ok, %{body: ^body}
   end

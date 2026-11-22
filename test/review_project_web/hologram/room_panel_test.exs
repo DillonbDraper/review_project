@@ -7,6 +7,11 @@ defmodule ReviewProjectWeb.Hologram.RoomPanelTest do
   alias ReviewProject.{Accounts, Rooms}
   alias ReviewProjectWeb.Hologram.{ConferencePanel, RoomPanel, RoomUI, UserAuth}
 
+  test "expired rooms explain abandonment rather than attributing closure to the host" do
+    assert RoomUI.error(%{reason: "room_expired"}) ==
+             "This room has expired after three hours without participants. Create a new room to continue."
+  end
+
   test "creation derives ownership from the verified session and returns a shareable invitation" do
     user = user_fixture()
     server = authenticated(user)
@@ -305,6 +310,42 @@ defmodule ReviewProjectWeb.Hologram.RoomPanelTest do
     assert leaving.next_action.name == :stopped
     assert leaving.next_action.params.mode == "stop"
     assert leaving.next_action.params.generation > component.state.conference_generation
+  end
+
+  test "either leave confirmation clears the session before returning home" do
+    component = RoomPanel.action(:leave, %{}, joined_component())
+    generation = component.state.generation
+
+    for {action, params} <- [
+          {:left, %{generation: generation, status: "ok"}},
+          {:transport, %{generation: generation, type: "room_ended", result: %{reason: "left"}}}
+        ] do
+      left = RoomPanel.action(action, params, component)
+      refute left.state.joined
+      refute left.state.busy
+      assert left.state.participants == []
+      assert left.state.generation > generation
+      assert left.next_action.name == :stopped
+      assert left.next_action.params.mode == "stop"
+      reset = conference_continuation(left.next_action)
+      assert reset.name == :reset
+      assert reset.target == "chat-panel"
+
+      stale = RoomPanel.action(:left, %{generation: generation, status: "ok"}, left)
+      assert stale == left
+    end
+  end
+
+  test "a failed leave keeps the session available to retry" do
+    leaving = RoomPanel.action(:leave, %{}, joined_component())
+
+    failed =
+      RoomPanel.action(:left, %{generation: leaving.state.generation, status: "error"}, leaving)
+
+    assert failed.state.joined
+    refute failed.state.busy
+    assert failed.state.error != ""
+    assert failed.state.generation == leaving.state.generation
   end
 
   test "a restored page clears the call before restoring chat and advances its saved resource epoch" do

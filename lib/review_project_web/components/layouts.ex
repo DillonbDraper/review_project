@@ -50,16 +50,8 @@ defmodule ReviewProjectWeb.Layouts do
       <nav class="flex-none" aria-label="Account">
         <ul class="flex items-center gap-1 sm:gap-2">
           <%= if @current_scope do %>
-            <li class="hidden max-w-56 truncate text-sm text-base-content/70 md:block">
-              {@current_scope.user.email}
-            </li>
             <li>
-              <.link href={~p"/users/settings"} class={header_link_class()}>Settings</.link>
-            </li>
-            <li>
-              <.link href={~p"/users/log-out"} method="delete" class={header_link_class()}>
-                Log out
-              </.link>
+              <ReviewProjectWeb.AccountComponents.profile_menu email={@current_scope.user.email} />
             </li>
           <% else %>
             <li>

@@ -20,12 +20,13 @@ defmodule ReviewProject.Rooms.ChatRoomMessage do
     |> cast(attrs, [:body])
     |> update_change(:body, &Validation.trim/1)
     |> validate_required([:room_id, :sequence, :body])
-    |> validate_length(:body, max: 2_000, count: :codepoints)
+    |> validate_length(:body, max: 1_000, count: :codepoints)
     |> validate_format(:body, ~r/\A[^\x00]*\z/u, message: "must not contain null characters")
     |> Validation.display_name(:sender_display_name)
     |> unique_constraint([:room_id, :sequence])
     |> foreign_key_constraint(:room_id)
     |> foreign_key_constraint(:sender_seat_id)
     |> check_constraint(:body, name: :chat_room_messages_body)
+    |> check_constraint(:body, name: :chat_room_messages_body_length)
   end
 end

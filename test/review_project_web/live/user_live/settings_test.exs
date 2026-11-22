@@ -24,16 +24,50 @@ defmodule ReviewProjectWeb.UserLive.SettingsTest do
       assert %{"error" => "You must log in to access this page."} = flash
     end
 
-    test "redirects if user is not in sudo mode", %{conn: conn} do
-      {:ok, conn} =
+    test "older sessions can view settings", %{conn: conn} do
+      {:ok, view, _html} =
         conn
         |> log_in_user(user_fixture(),
-          token_authenticated_at: DateTime.add(DateTime.utc_now(:second), -11, :minute)
+          token_authenticated_at: DateTime.add(DateTime.utc_now(:second), -21, :minute)
         )
         |> live(~p"/users/settings")
-        |> follow_redirect(conn, ~p"/users/log-in")
 
-      assert conn.resp_body =~ "You must re-authenticate to access this page."
+      assert has_element?(view, "#email_form")
+      assert has_element?(view, "#password_form")
+      assert has_element?(view, "details[data-profile-menu] #account-settings")
+    end
+
+    test "older sessions must reauthenticate before either sensitive save", %{conn: conn} do
+      user = user_fixture()
+
+      conn =
+        log_in_user(conn, user,
+          token_authenticated_at: DateTime.add(DateTime.utc_now(:second), -21, :minute)
+        )
+
+      for {id, attrs} <- [
+            {"email_form", %{email: unique_user_email()}},
+            {"password_form",
+             %{password: valid_user_password(), password_confirmation: valid_user_password()}}
+          ] do
+        {:ok, view, _} = live(conn, ~p"/users/settings")
+        view |> form("##{id}", user: attrs) |> render_submit()
+        assert_redirect(view, ~p"/users/reauthenticate")
+        assert Accounts.get_user!(user.id).email == user.email
+        refute Accounts.get_user!(user.id).hashed_password
+      end
+    end
+
+    test "a nineteen-minute-old authentication can still save", %{conn: conn} do
+      conn =
+        log_in_user(conn, user_fixture(),
+          token_authenticated_at: DateTime.add(DateTime.utc_now(:second), -19, :minute)
+        )
+
+      {:ok, view, _} = live(conn, ~p"/users/settings")
+      view |> form("#email_form", user: %{email: unique_user_email()}) |> render_submit()
+      assert has_element?(view, "#email_form")
+      refute_redirected(view)
     end
   end
 
@@ -189,6 +223,23 @@ defmodule ReviewProjectWeb.UserLive.SettingsTest do
       assert path == ~p"/users/settings"
       assert %{"error" => message} = flash
       assert message == "Email change link is invalid or it has expired."
+    end
+
+    test "old sessions preserve the email confirmation destination without applying it", %{
+      conn: conn,
+      user: user,
+      token: token
+    } do
+      conn =
+        log_in_user(conn, user,
+          token_authenticated_at: DateTime.add(DateTime.utc_now(:second), -21, :minute)
+        )
+
+      assert {:error, {:redirect, %{to: destination}}} =
+               live(conn, ~p"/users/settings/confirm-email/#{token}")
+
+      assert destination == ~p"/users/reauthenticate?#{[email_token: token]}"
+      assert Accounts.get_user!(user.id).email == user.email
     end
 
     test "does not update email with invalid token", %{conn: conn, user: user} do

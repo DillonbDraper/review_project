@@ -134,7 +134,7 @@ defmodule ReviewProjectWeb.Hologram.PlaybackState do
 
       state.desired == nil or state.desired.video_id == nil ->
         if(controller?(state),
-          do: "Choose a YouTube video to get started.",
+          do: nil,
           else: "Waiting for the controller to choose a video."
         )
 

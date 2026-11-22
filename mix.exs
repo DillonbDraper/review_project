@@ -116,6 +116,7 @@ defmodule ReviewProject.MixProject do
   defp aliases do
     [
       setup: ["deps.get", "ecto.setup", "assets.setup", "assets.build"],
+      "compile.hologram": [&isolate_test_assets/1, "compile.hologram"],
       "ecto.setup": ["ecto.create", "ecto.migrate", "run priv/repo/seeds.exs"],
       "ecto.reset": ["ecto.drop", "ecto.setup"],
       test: ["ecto.create --quiet", "ecto.migrate --quiet", "test"],
@@ -128,5 +129,26 @@ defmodule ReviewProject.MixProject do
       ],
       precommit: ["compile --warnings-as-errors", "deps.unlock --unused", "format", "test"]
     ]
+  end
+
+  # Mix normally symlinks the app's priv directory back to the checkout. Hologram
+  # removes obsolete bundles on compilation, so tests must compile against their
+  # own copy instead of deleting bundles used by a running development server.
+  defp isolate_test_assets(_args) do
+    if Mix.env() == :test do
+      target = Path.join(Mix.Project.app_path(), "priv")
+
+      case File.read_link(target) do
+        {:ok, _source} ->
+          File.rm!(target)
+          File.cp_r!("priv", target)
+
+        {:error, :enoent} ->
+          File.cp_r!("priv", target)
+
+        {:error, :einval} ->
+          :ok
+      end
+    end
   end
 end

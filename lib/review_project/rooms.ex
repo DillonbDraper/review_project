@@ -33,6 +33,21 @@ defmodule ReviewProject.Rooms do
     end
   end
 
+  @doc false
+  def expire_abandoned_rooms(now \\ DateTime.utc_now()) do
+    Store.recover_orphaned_rooms(now)
+
+    for id <- Store.expired_room_ids(now),
+        {:ok, %ReviewProject.Rooms.Room{}} <- [Store.expire_abandoned_room(id, now)] do
+      case Registry.lookup(ReviewProject.Rooms.Registry, id) do
+        [{pid, _}] -> GenServer.cast(pid, {:closed, :room_expired})
+        [] -> :ok
+      end
+
+      id
+    end
+  end
+
   def join_room(
         current_scope,
         room_id,

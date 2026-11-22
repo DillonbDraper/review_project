@@ -31,7 +31,8 @@ confirmation email at `/dev/mailbox`), then enter a room name and your display
 name. The room opens with an invitation link you can copy and share anywhere.
 Guests open the link, choose a display name, and join without an account. Use a
 different browser/profile to try a separate guest: tabs in one browser share a
-seat. **Leave room** releases a guest seat immediately.
+seat. **Leave room** releases a guest seat immediately and returns the participant
+to the main workspace.
 
 The home page lists your recent open rooms. Reopening one uses your signed-in
 ownership; if this tab no longer has its invitation, **Invite people** offers an
@@ -97,9 +98,9 @@ Use normal autoplay restrictions for the room check: omit the autoplay override
 from the legacy spike smoke-test command below.
 Room lifecycle and client delivery/history behavior are written in Elixir/Hologram
 and covered by `mix precommit`; JavaScript only adapts browser APIs and the Phoenix
-channel transport. Run checks before starting
-the development server: Hologram dev/test builds share generated asset paths;
-restart `mix holo` after running `mix precommit` to refresh development bundles.
+channel transport. Test compilation uses a separate copy of the app's `priv`
+directory under `_build/test`, so `mix test` and `mix precommit` do not remove
+Hologram bundles used by a running development server.
 
 ## Hologram development and checks
 

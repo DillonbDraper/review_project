@@ -41,6 +41,9 @@ defmodule ReviewProjectWeb.Hologram.RoomUI do
       "room_closed" ->
         "The host has closed this room."
 
+      "room_expired" ->
+        "This room has expired after three hours without participants. Create a new room to continue."
+
       "closed" ->
         "The host has closed this room."
 

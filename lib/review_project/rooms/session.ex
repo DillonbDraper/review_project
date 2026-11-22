@@ -120,7 +120,7 @@ defmodule ReviewProject.Rooms.Session do
   def handle_call({:request, scope, pid, operation}, _from, state) do
     state = maintain_state(state)
 
-    if Store.open?(state.room.id) do
+    if Store.open?(state.room.id, state.wall_clock.()) do
       case Enum.find(state.members, fn {_id, member} -> is_pid(pid) and member.pid == pid end) do
         nil ->
           {:reply, {:error, :not_joined}, state}
@@ -146,6 +146,11 @@ defmodule ReviewProject.Rooms.Session do
   @impl true
   def handle_cast(:closed, state) do
     notify(state, :room_closed, %{reason: :closed})
+    {:stop, :normal, state}
+  end
+
+  def handle_cast({:closed, reason}, state) do
+    notify(state, :room_closed, %{reason: reason})
     {:stop, :normal, state}
   end
 

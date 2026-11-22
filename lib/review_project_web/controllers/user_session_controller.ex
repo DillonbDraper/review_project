@@ -48,7 +48,38 @@ defmodule ReviewProjectWeb.UserSessionController do
 
   def update_password(conn, %{"user" => user_params} = params) do
     user = conn.assigns.current_scope.user
-    true = Accounts.sudo_mode?(user)
+
+    if Accounts.sudo_mode?(user) do
+      save_password(conn, user, user_params, params)
+    else
+      redirect(conn, to: ~p"/users/reauthenticate")
+    end
+  end
+
+  def reauthenticate(conn, params) do
+    destination =
+      case params do
+        %{"email_token" => token} when is_binary(token) ->
+          ~p"/users/settings/confirm-email/#{token}"
+
+        _ ->
+          ~p"/users/settings"
+      end
+
+    if Accounts.sudo_mode?(conn.assigns.current_scope.user) do
+      redirect(conn, to: destination)
+    else
+      conn
+      |> put_session(:user_return_to, destination)
+      |> put_flash(
+        :info,
+        "Confirm your identity to change account details. Unsaved edits must be entered again after logging in."
+      )
+      |> redirect(to: ~p"/users/log-in")
+    end
+  end
+
+  defp save_password(conn, user, user_params, params) do
     {:ok, {_user, expired_tokens}} = Accounts.update_user_password(user, user_params)
 
     # disconnect all existing LiveViews with old sessions

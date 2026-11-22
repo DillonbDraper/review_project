@@ -8,6 +8,67 @@ defmodule ReviewProjectWeb.UserSessionControllerTest do
     %{unconfirmed_user: unconfirmed_user_fixture(), user: user_fixture()}
   end
 
+  describe "settings reauthentication" do
+    test "stores only a local return destination and consumes it after login", %{
+      conn: conn,
+      user: user
+    } do
+      user = set_password(user)
+
+      conn =
+        conn
+        |> log_in_user(user,
+          token_authenticated_at: DateTime.add(DateTime.utc_now(:second), -21, :minute)
+        )
+        |> get(
+          ~p"/users/reauthenticate?#{[email_token: "confirmation-token", return_to: "https://example.com"]}"
+        )
+
+      assert redirected_to(conn) == ~p"/users/log-in"
+
+      assert get_session(conn, :user_return_to) ==
+               ~p"/users/settings/confirm-email/confirmation-token"
+
+      failed =
+        post(recycle(conn), ~p"/users/log-in", user: %{email: user.email, password: "wrong"})
+
+      assert get_session(failed, :user_return_to) ==
+               ~p"/users/settings/confirm-email/confirmation-token"
+
+      logged_in =
+        post(recycle(failed), ~p"/users/log-in",
+          user: %{email: user.email, password: valid_user_password()}
+        )
+
+      assert redirected_to(logged_in) == ~p"/users/settings/confirm-email/confirmation-token"
+      refute get_session(logged_in, :user_return_to)
+    end
+
+    test "recent authentication returns directly to settings", %{conn: conn, user: user} do
+      conn = conn |> log_in_user(user) |> get(~p"/users/reauthenticate")
+      assert redirected_to(conn) == ~p"/users/settings"
+      refute get_session(conn, :user_return_to)
+    end
+
+    test "a direct password POST cannot bypass recent authentication", %{conn: conn, user: user} do
+      conn =
+        conn
+        |> log_in_user(user,
+          token_authenticated_at: DateTime.add(DateTime.utc_now(:second), -21, :minute)
+        )
+        |> post(~p"/users/update-password",
+          user: %{
+            email: user.email,
+            password: valid_user_password(),
+            password_confirmation: valid_user_password()
+          }
+        )
+
+      assert redirected_to(conn) == ~p"/users/reauthenticate"
+      refute Accounts.get_user!(user.id).hashed_password
+    end
+  end
+
   describe "POST /users/log-in - email and password" do
     test "logs the user in", %{conn: conn, user: user} do
       user = set_password(user)

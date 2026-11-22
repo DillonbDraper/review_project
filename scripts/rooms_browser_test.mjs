@@ -214,9 +214,13 @@ try {
   await replacement.click("#conference-microphone");
   await replacement.click("#conference-camera");
   await wait(replacement, "document.querySelector('#conference-camera').getAttribute('aria-pressed') === 'true' && document.querySelector('#conference-microphone').getAttribute('aria-pressed') === 'true'", "capture before explicit leave");
+  await replacement.evaluate(`addEventListener('pagehide', () => sessionStorage.setItem('leave-cleanup', JSON.stringify({
+    peersClosed: __rtcPeers.every(pc => pc.connectionState === 'closed'),
+    tracksEnded: __rtcTracks.length > 0 && __rtcTracks.every(track => track.readyState === 'ended')
+  })), {once: true})`);
   await replacement.click("#leave-room");
-  await wait(replacement, "document.querySelector('#room-status').textContent.includes('left')", "explicit leave");
-  await wait(replacement, "__rtcPeers.every(pc => pc.connectionState === 'closed') && __rtcTracks.every(track => track.readyState === 'ended')", "explicit leave releases conference resources");
+  await wait(replacement, "location.pathname === '/' && document.querySelector('#room-panel')?.dataset.ready === 'true' && !document.querySelector('#video-source').disabled", "explicit leave returns home");
+  assert.deepEqual(await replacement.evaluate("JSON.parse(sessionStorage.getItem('leave-cleanup'))"), {peersClosed: true, tracksEnded: true});
   await wait(replacement, "!document.querySelector('.conference-tile') && !document.querySelector('#conference-audio audio')", "explicit leave clears viewer panels");
   await wait(host, connected(1), "guest seat released");
   assert(await host.evaluate("document.querySelector('.room-capacity').textContent.includes('1/5')"));

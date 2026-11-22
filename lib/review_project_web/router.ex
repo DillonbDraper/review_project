@@ -72,6 +72,7 @@ defmodule ReviewProjectWeb.Router do
     end
 
     post "/users/update-password", UserSessionController, :update_password
+    get "/users/reauthenticate", UserSessionController, :reauthenticate
   end
 
   scope "/", ReviewProjectWeb do

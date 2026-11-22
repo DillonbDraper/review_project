@@ -52,13 +52,21 @@ defmodule ReviewProjectWeb.Hologram.ChatPanelTest do
     assert component.state.draft_length == 3
 
     assert document(component) |> LazyHTML.query("#chat-draft-count") |> LazyHTML.text() ==
-             "3 / 2000"
+             "3 / 1000"
 
-    for invalid <- [" ", String.duplicate("x", 2001), "bad" <> <<0>>] do
+    for invalid <- [" ", String.duplicate("x", 1001), "bad" <> <<0>>] do
       refute send_message(component, invalid).state.sending
     end
 
-    assert send_message(component, String.duplicate("😀", 2000)).state.sending
+    assert send_message(component, String.duplicate("😀", 1000)).state.sending
+
+    at_limit = draft(component, String.duplicate("😀", 1000))
+    assert count(at_limit, "#send-message[disabled]") == 0
+    above_limit = draft(component, String.duplicate("😀", 1001))
+    assert count(above_limit, "#send-message[disabled]") == 1
+    rejected = send_message(above_limit, above_limit.state.draft)
+    assert rejected.state.error == "Keep your message to 1000 characters or fewer."
+    assert rejected.state.draft == above_limit.state.draft
   end
 
   test "timeouts refresh the full conversation without replaying the send or clearing the draft",

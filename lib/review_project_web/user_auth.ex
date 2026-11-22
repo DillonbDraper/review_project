@@ -36,6 +36,7 @@ defmodule ReviewProjectWeb.UserAuth do
     user_return_to = get_session(conn, :user_return_to)
 
     conn
+    |> delete_session(:user_return_to)
     |> create_or_extend_session(user, params)
     |> redirect(to: user_return_to || signed_in_path(conn))
   end

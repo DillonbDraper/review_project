@@ -15,12 +15,23 @@ defmodule ReviewProject.Rooms.Store do
 
       owner_id ->
         Repo.transaction(fn ->
-          room = insert!(Room.changeset(%Room{owner_id: owner_id}, attrs))
+          now = DateTime.utc_now()
+
+          room =
+            insert!(
+              Room.changeset(
+                %Room{owner_id: owner_id, expires_at: abandonment_deadline(now)},
+                attrs
+              )
+            )
 
           insert!(
-            Seat.changeset(%Seat{room_id: room.id, slot: 0, join_sequence: 0}, %{
-              display_name: "Host"
-            })
+            Seat.changeset(
+              %Seat{room_id: room.id, slot: 0, join_sequence: 0, disconnected_at: now},
+              %{
+                display_name: "Host"
+              }
+            )
           )
 
           token = new_invitation!(room.id)
@@ -35,9 +46,14 @@ defmodule ReviewProject.Rooms.Store do
         {:error, :authentication_required}
 
       id ->
+        now = DateTime.utc_now()
+
         {:ok,
          Repo.all(
-           from r in Room, where: r.owner_id == ^id, order_by: [desc: r.inserted_at, desc: r.id]
+           from r in Room,
+             where: r.owner_id == ^id,
+             where: is_nil(r.expired_at) and (is_nil(r.expires_at) or r.expires_at > ^now),
+             order_by: [desc: r.inserted_at, desc: r.id]
          )}
     end
   end
@@ -69,24 +85,17 @@ defmodule ReviewProject.Rooms.Store do
     Repo.transaction(fn ->
       room = lock_room!(id)
       authorize_owner!(scope, room)
-      room = Repo.update!(Ecto.Changeset.change(room, closed_at: room.closed_at || now))
-
-      Repo.update_all(
-        from(i in Invitation, where: i.room_id == ^room.id and is_nil(i.revoked_at)),
-        set: [revoked_at: now, updated_at: now]
-      )
-
-      Repo.delete_all(from s in Seat, where: s.room_id == ^room.id and s.slot > 0)
-
-      Repo.update_all(from(s in Seat, where: s.room_id == ^room.id and s.slot == 0),
-        set: [disconnected_at: now, updated_at: now]
-      )
-
-      room
+      close_room!(room, now)
     end)
   end
 
-  def open?(id), do: Repo.exists?(from r in Room, where: r.id == ^id and is_nil(r.closed_at))
+  def open?(id, now \\ DateTime.utc_now()) do
+    Repo.exists?(
+      from r in Room,
+        where: r.id == ^id and is_nil(r.closed_at),
+        where: is_nil(r.expires_at) or r.expires_at > ^now
+    )
+  end
 
   def open_room(id) do
     Repo.transaction(fn ->
@@ -100,7 +109,7 @@ defmodule ReviewProject.Rooms.Store do
   def recover(id, now) do
     Repo.transaction(fn ->
       room = lock_room!(id)
-      require_open!(room)
+      require_open!(room, now)
 
       Repo.update_all(from(s in Seat, where: s.room_id == ^id and s.slot == 0),
         set: [disconnected_at: now, updated_at: now]
@@ -122,6 +131,7 @@ defmodule ReviewProject.Rooms.Store do
           where: s.room_id == ^id and s.slot > 0 and s.reserved_until <= ^now
       )
 
+      room = mark_abandoned!(room, now)
       %{room: room, seats: Repo.all(from s in Seat, where: s.room_id == ^id)}
     end)
   end
@@ -129,7 +139,7 @@ defmodule ReviewProject.Rooms.Store do
   def admit(scope, id, browser_identity, invitation, display_name, now) do
     Repo.transaction(fn ->
       room = lock_room!(id)
-      require_open!(room)
+      require_open!(room, now)
       seats = Repo.all(from s in Seat, where: s.room_id == ^id)
 
       seat =
@@ -156,36 +166,45 @@ defmodule ReviewProject.Rooms.Store do
       seat =
         if Ecto.get_meta(seat, :state) == :built, do: insert!(changeset), else: update!(changeset)
 
+      room = update!(Ecto.Changeset.change(room, expires_at: nil))
       %{room: room, seat: seat}
     end)
   end
 
   def disconnect(id, seat_id, generation, now) do
     Repo.transaction(fn ->
-      lock_room!(id)
+      room = lock_room!(id)
       seat = current_seat!(id, seat_id, generation)
       reservation = if seat.slot > 0, do: DateTime.add(now, 30, :second)
 
-      update!(
-        Ecto.Changeset.change(seat,
-          disconnected_at: now,
-          reserved_until: reservation,
-          updated_at: now
+      seat =
+        update!(
+          Ecto.Changeset.change(seat,
+            disconnected_at: now,
+            reserved_until: reservation,
+            updated_at: now
+          )
         )
-      )
+
+      mark_abandoned!(room, now)
+      seat
     end)
   end
 
   def release(id, seat_id, generation, now) do
     Repo.transaction(fn ->
-      lock_room!(id)
+      room = lock_room!(id)
       seat = current_seat!(id, seat_id, generation)
 
-      if seat.slot == 0 do
-        update!(Ecto.Changeset.change(seat, disconnected_at: now, updated_at: now))
-      else
-        Repo.delete!(seat)
-      end
+      seat =
+        if seat.slot == 0 do
+          update!(Ecto.Changeset.change(seat, disconnected_at: now, updated_at: now))
+        else
+          Repo.delete!(seat)
+        end
+
+      mark_abandoned!(room, now)
+      seat
     end)
   end
 
@@ -305,8 +324,88 @@ defmodule ReviewProject.Rooms.Store do
     end
   end
 
-  defp require_open!(%Room{closed_at: nil}), do: :ok
-  defp require_open!(_), do: Repo.rollback(:room_closed)
+  defp require_open!(room, now \\ DateTime.utc_now()) do
+    cond do
+      room.expired_at != nil -> Repo.rollback(:room_expired)
+      room.closed_at != nil -> Repo.rollback(:room_closed)
+      due?(room, now) -> Repo.rollback(:room_expired)
+      true -> :ok
+    end
+  end
+
+  defp due?(%Room{expires_at: nil}, _now), do: false
+  defp due?(room, now), do: DateTime.compare(room.expires_at, now) != :gt
+
+  defp abandonment_deadline(now),
+    do:
+      DateTime.add(
+        now,
+        Application.get_env(:review_project, :room_abandonment_seconds, 3 * 60 * 60),
+        :second
+      )
+
+  defp mark_abandoned!(room, now) do
+    connected? =
+      Repo.exists?(from s in Seat, where: s.room_id == ^room.id and is_nil(s.disconnected_at))
+
+    if is_nil(room.closed_at) and is_nil(room.expires_at) and not connected?,
+      do: update!(Ecto.Changeset.change(room, expires_at: abandonment_deadline(now))),
+      else: room
+  end
+
+  defp close_room!(room, now) do
+    room = update!(Ecto.Changeset.change(room, closed_at: room.closed_at || now))
+
+    Repo.update_all(from(i in Invitation, where: i.room_id == ^room.id and is_nil(i.revoked_at)),
+      set: [revoked_at: now, updated_at: now]
+    )
+
+    Repo.delete_all(from s in Seat, where: s.room_id == ^room.id and s.slot > 0)
+
+    Repo.update_all(from(s in Seat, where: s.room_id == ^room.id and s.slot == 0),
+      set: [disconnected_at: now, updated_at: now]
+    )
+
+    room
+  end
+
+  def expired_room_ids(now) do
+    Repo.all(
+      from r in Room,
+        where: is_nil(r.closed_at) and r.expires_at <= ^now,
+        order_by: [asc: r.expires_at],
+        limit: 100,
+        select: r.id
+    )
+  end
+
+  def expire_abandoned_room(id, now) do
+    Repo.transaction(fn ->
+      room = lock_room!(id)
+
+      if is_nil(room.closed_at) and due?(room, now) do
+        room |> Ecto.Changeset.change(expired_at: now) |> update!() |> close_room!(now)
+      end
+    end)
+  end
+
+  # After application/coordinator failure, persisted connections have no live
+  # transport. Recheck the registry under the room lock to avoid racing a join.
+  def recover_orphaned_rooms(now) do
+    ids =
+      Repo.all(from r in Room, where: is_nil(r.closed_at) and is_nil(r.expires_at), select: r.id)
+
+    Enum.each(ids, fn id ->
+      Repo.transaction(fn ->
+        room = lock_room!(id)
+
+        if is_nil(room.closed_at) and is_nil(room.expires_at) and
+             Registry.lookup(ReviewProject.Rooms.Registry, id) == [] do
+          {:ok, _} = recover(id, now)
+        end
+      end)
+    end)
+  end
 
   defp insert!(changeset) do
     case Repo.insert(changeset) do

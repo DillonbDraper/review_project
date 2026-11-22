@@ -116,6 +116,14 @@ after rendering, independently of persistent remote audio. Runtime ICE credentia
 and bounded recovery are implemented; public relay deployment and verification
 remain release gates in the [conferencing plan](conferencing-plan.md).
 
+The Hologram `AccountMenu` owns profile disclosure state, outside-click/Escape
+dismissal, delayed focus-exit checks and link activation. `ui_dom.mjs` only reads
+DOM focus and restores it. The `profile_menu.js` fallback targets the separate
+Phoenix header's `data-profile-menu` disclosures, not Hologram markup. `VideoPanel`
+binds the playback explanation's click, viewport scroll and resize events through
+Hologram; `playback_info.js` is an explicitly imported DOM positioning helper with
+no global listeners. Native popovers retain their built-in opening and dismissal.
+
 Owner-only APIs are `list_rooms/1`, `get_room/2`, `rotate_invitation/2`,
 `close_room/2`, and `list_messages/3`. Existing guests retain their seats after
 invitation rotation; future guest admissions/reconnects require the new token.
@@ -138,11 +146,22 @@ capture sender identity/name on the server; clients can submit only their body.
 Cross-room sender references are rejected by a composite FK. Deleting an expired
 seat nulls the message's seat reference and preserves its name snapshot.
 
-Messages are immutable, nonblank text up to 2,000 characters. Joined guests can
+Messages are immutable, nonblank text up to 1,000 characters. Joined guests can
 read prior messages; nonmembers cannot read guest history. Owners can read history
 without joining, including after closing a room. The latest 50 are included on
 join, with backward pagination of at most 100 per request. There is no automatic
-age-based deletion, empty-room expiry, or session-duration limit.
+age-based chat deletion or session-duration limit. Rooms expire after three hours
+continuously empty, or three hours after creation if never joined. Successful
+admission clears `expires_at`; the last disconnect/leave sets it. Guest reconnect
+reservations do not count as connected participants. Room locking serializes joins
+and expiry. A supervised `Rooms.Expiry` worker sweeps at startup and every minute;
+admission also rejects overdue rooms before the sweep. Expiry sets `closed_at`
+and `expired_at`, revokes invitations and stops the coordinator, preserving chat.
+Orphaned previously occupied rooms receive a fresh three-hour deadline on recovery;
+existing abandonment deadlines are never extended by recovery. The default is
+configurable via `:room_abandonment_seconds` (10,800 seconds); the worker accepts
+`:room_expiry_worker` options for its interval. This is a single-node lifecycle,
+matching the coordinator model below.
 
 The coordinator is single-node. Registry provides one coordinator per room on
 that node; this is not a distributed lock/failover implementation. Monotonic time
@@ -266,9 +285,9 @@ APP_URL=https://localhost:4441 REPORT_PATH=/tmp/production-playback-room.json \
 
 The browser helper expects Chrome CDP on port 9222 and Firefox BiDi on port 9223.
 `SOLO_ONLY=1` or `CORE_ONLY=1` restricts the run and does not establish the
-five-participant target. Finish build checks before browser checks: Hologram
-environments share generated assets, so compiling another environment during a
-run invalidates its loaded chunks. Restart the app after switching builds.
+five-participant target. Test builds use isolated assets and can run alongside
+the development server. Development and production still share generated assets;
+restart the app after switching between those builds.
 Same-machine Chrome/Firefox checks do not establish Edge/Safari coverage,
 separate-device network behavior, ad/live metadata edge cases, public TURN, or
 the complete multi-hour release soak.
@@ -283,6 +302,16 @@ visibility return. These results meet the scoped local timing gate; they are
 not separate-device or full release certification. An earlier development run
 reported local YouTube error 5; its cause was not established, and the successful
 run does not imply that provider failures cannot occur.
+
+After the native-input fixes, the follow-up run passed all 14 checks with five
+participants, 120 settled samples over 61.013 seconds, **0.201 s p95 drift**,
+**0.144 s p95 spread**, and **zero corrective seeks for every participant**.
+The delayed participant's measured round trip was 501.2–501.4 ms; visibility
+recovery took 217 ms. The separate native-interaction harness passed rapid
+Pause/Play, repeated seeks, seek bursts, and paused seeks in Chrome and Firefox.
+Its Chrome cold-seek checks also exercised real buffering with no app-issued
+Pause. Sixteen additional reducer/intent regressions cover these orderings,
+long buffering, command responses, pending room input, resync, and source resets.
 
 ## Checks
 
