@@ -26,6 +26,7 @@ defmodule ReviewProject.RuntimeConfigTest do
           "DATABASE_URL" => "ecto://user:password@db.example.org/postgres",
           "SECRET_KEY_BASE" => String.duplicate("a", 64),
           "PHX_HOST" => "staging.example.org",
+          "RESEND_API_KEY" => "test-resend-key",
           "DATABASE_SSL" => nil,
           "DATABASE_CA_CERT_FILE" => nil,
           "MIGRATION_DATABASE_URL" => nil,
@@ -67,6 +68,45 @@ defmodule ReviewProject.RuntimeConfigTest do
                ReviewProject.Repo
              )
     end
+  end
+
+  test "bundled public Supabase root has the approved identity and database-only trust" do
+    path = "priv/certificates/supabase-root-ca.crt"
+    pem = File.read!(path)
+
+    assert Regex.match?(
+             ~r/\A\s*-----BEGIN CERTIFICATE-----\s+[A-Za-z0-9+\/=\r\n]+-----END CERTIFICATE-----\s*\z/,
+             pem
+           )
+
+    assert [{:Certificate, der, :not_encrypted}] = :public_key.pem_decode(pem)
+
+    assert Base.encode16(:crypto.hash(:sha256, der)) ==
+             "807025AD50D4ED219D2C9C7D299C004F824EB00CF7F65AFEF607D07B72E6CAFA"
+
+    cert = :public_key.pkix_decode_cert(der, :otp)
+    tbs = elem(cert, 1)
+
+    assert Enum.any?(elem(tbs, 10), fn extension ->
+             match?({:Extension, {2, 5, 29, 19}, true, {:BasicConstraints, true, _}}, extension)
+           end)
+
+    repo =
+      config(:prod, %{"DATABASE_SSL" => "true", "DATABASE_CA_CERT_FILE" => path})[
+        :review_project
+      ][ReviewProject.Repo]
+
+    assert repo[:ssl][:cacerts] == [der | :public_key.cacerts_get()]
+    assert repo[:ssl][:verify] == :verify_peer
+    assert repo[:ssl][:server_name_indication] == ~c"db.example.org"
+
+    refute :public_key.pkix_verify_hostname(cert, [{:dns_id, ~c"wrong.example.org"}],
+             match_fun: repo[:ssl][:customize_hostname_check][:match_fun]
+           )
+
+    assert config(:prod, %{"DATABASE_CA_CERT_FILE" => path})[:review_project][ReviewProject.Repo][
+             :ssl
+           ] == false
   end
 
   @tag :tmp_dir
@@ -139,6 +179,38 @@ defmodule ReviewProject.RuntimeConfigTest do
     end
 
     assert Application.fetch_env!(:review_project, ReviewProject.Repo) == original
+  end
+
+  test "production uses Resend with a configured product sender and Req" do
+    runtime = config(:prod, %{})
+    mailer = runtime[:review_project][ReviewProject.Mailer]
+    assert mailer[:adapter] == Swoosh.Adapters.Resend
+    assert mailer[:api_key] == "test-resend-key"
+    base = Config.Reader.read!("config/config.exs", env: :prod, target: :host)
+    assert base[:review_project][:mail_sender] == {"ReviewProject", "noreply@whatgrabsme.org"}
+    refute Keyword.has_key?(runtime[:review_project], :mail_sender)
+
+    prod = Config.Reader.read!("config/prod.exs", env: :prod, target: :host)
+    assert prod[:swoosh][:api_client] == Swoosh.ApiClient.Req
+  end
+
+  test "production fails clearly without email configuration" do
+    for value <- [nil, "", "  "] do
+      assert_raise RuntimeError, ~r/RESEND_API_KEY is required/, fn ->
+        config(:prod, %{"RESEND_API_KEY" => value})
+      end
+    end
+  end
+
+  test "email environment does not override development or test adapters and sender" do
+    for env <- [:dev, :test] do
+      runtime = config(env, %{"RESEND_API_KEY" => nil})
+      refute Keyword.has_key?(runtime[:review_project], ReviewProject.Mailer)
+      refute Keyword.has_key?(runtime[:review_project], :mail_sender)
+    end
+
+    assert Application.fetch_env!(:review_project, ReviewProject.Mailer)[:adapter] ==
+             Swoosh.Adapters.Test
   end
 
   test "production requires an explicit public hostname" do

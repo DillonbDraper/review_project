@@ -8,6 +8,9 @@
 !lib/**
 !priv/
 !priv/**
+# Public database CA is intentionally bundled, never local credential files.
+!priv/certificates/
+!priv/certificates/supabase-root-ca.crt
 !assets/
 !assets/**
 !vendor/

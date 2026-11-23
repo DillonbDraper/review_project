@@ -43,6 +43,7 @@ config :review_project, ReviewProjectWeb.Endpoint,
 # For production it's recommended to configure a different adapter
 # at the `config/runtime.exs`.
 config :review_project, ReviewProject.Mailer, adapter: Swoosh.Adapters.Local
+config :review_project, :mail_sender, {"Review Project", "noreply@whatgrabsme.org"}
 
 # Configure log in with Google. The OAuth client credentials are read
 # from the environment in config/runtime.exs.

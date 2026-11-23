@@ -35,6 +35,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 ENV LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 PHX_SERVER=true HOLOGRAM_ENV=prod
 WORKDIR /app
 COPY --from=build --chown=nobody:nogroup /app/_build/prod/rel/review_project ./
+# Database-only trust anchor, deliberately outside the OS trust store and immutable
+# to the runtime user. DATABASE_SSL remains opt-in.
+COPY --chmod=0444 priv/certificates/supabase-root-ca.crt /app/certificates/supabase-root-ca.crt
+RUN chmod 0555 /app/certificates
+ENV DATABASE_CA_CERT_FILE=/app/certificates/supabase-root-ca.crt
 USER nobody
 EXPOSE 8080
 CMD ["/app/bin/review_project", "start"]

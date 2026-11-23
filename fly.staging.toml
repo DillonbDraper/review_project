@@ -1,15 +1,18 @@
-# App identity is deliberately supplied with --app, not committed here.
+# Draft app name; availability has not been confirmed or reserved.
+app = "review-project-staging"
 primary_region = "iad"
 
 [build]
   dockerfile = "Dockerfile"
 
 [env]
+  PHX_HOST = "review-project-staging.fly.dev"
   PHX_SERVER = "true"
   PORT = "8080"
   POOL_SIZE = "3"
   ECTO_IPV6 = "true"
   DATABASE_SSL = "true"
+  DATABASE_CA_CERT_FILE = "/app/certificates/supabase-root-ca.crt"
 
 [deploy]
   release_command = "/app/bin/review_project eval 'ReviewProject.Release.migrate()'"

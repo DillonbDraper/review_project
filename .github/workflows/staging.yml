@@ -1,0 +1,81 @@
+# REVIEW DRAFT: do not enable until docs/staging-deployment.md setup is approved.
+name: Staging checks and deployment
+on:
+  pull_request:
+  push:
+    branches: [staging]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  checks:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:17-bookworm
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd 'pg_isready -U postgres'
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      # Mutable action tags below must be reviewed/pinned before enabling.
+      - uses: docker/setup-buildx-action@v3
+      - name: Build runner-local toolchain
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: build
+          load: true
+          tags: review-project:ci-toolchain
+          cache-from: type=gha,scope=staging-build
+          cache-to: type=gha,mode=max,scope=staging-build
+      - name: Test with disposable local PostgreSQL only
+        run: |
+          node --test scripts/staging_assets.test.mjs
+          docker run --rm --network host -e MIX_ENV=test \
+            -v "$PWD/test:/app/test:ro" -v "$PWD/.formatter.exs:/app/.formatter.exs:ro" \
+            review-project:ci-toolchain \
+            sh -ec 'mix deps.get && mix compile --warnings-as-errors && mix format --check-formatted && mix test'
+      - name: Build production image on runner
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: review-project:${{ github.sha }}
+          cache-from: type=gha,scope=staging-build
+          cache-to: type=gha,mode=max,scope=staging-build
+      - name: Smoke exact production image
+        run: bash scripts/staging_smoke.sh "review-project:$GITHUB_SHA"
+  deploy:
+    needs: checks
+    if: github.ref == 'refs/heads/staging' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: staging
+    concurrency:
+      group: fly-staging-deploy
+      cancel-in-progress: false
+    env:
+      FLY_APP: ${{ vars.FLY_APP }}
+    steps:
+      - name: Validate app before credentials or tooling
+        run: |
+          [[ "$FLY_APP" =~ ^[a-z0-9][a-z0-9-]*$ ]] || { echo 'Set a valid staging environment FLY_APP'; exit 1; }
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      # Remote build uses the checked revision, not the runner's smoke-tested image.
+      - name: Build remotely and deploy staging
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$FLY_API_TOKEN" || { echo 'Missing staging FLY_API_TOKEN'; exit 1; }
+          flyctl deploy --remote-only --app "$FLY_APP" --config fly.staging.toml --ha=false

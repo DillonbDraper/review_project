@@ -9,7 +9,7 @@ defmodule ReviewProject.Accounts.UserNotifier do
     email =
       new()
       |> to(recipient)
-      |> from({"ReviewProject", "contact@example.com"})
+      |> from(Application.fetch_env!(:review_project, :mail_sender))
       |> subject(subject)
       |> text_body(body)
 
