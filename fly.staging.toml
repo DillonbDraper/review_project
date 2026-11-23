@@ -1,40 +1,45 @@
-# Draft app name; availability has not been confirmed or reserved.
-app = "review-project-staging"
-primary_region = "iad"
+# fly.toml app configuration file generated for review-project on 2026-11-23T15:49:23Z
+#
+# See https://docs.fly.io/reference/configuration for information about how to use this file.
+#
+
+app = 'review-project'
+primary_region = 'iad'
 
 [build]
-  dockerfile = "Dockerfile"
-
-[env]
-  PHX_HOST = "review-project-staging.fly.dev"
-  PHX_SERVER = "true"
-  PORT = "8080"
-  POOL_SIZE = "3"
-  ECTO_IPV6 = "true"
-  DATABASE_SSL = "true"
-  DATABASE_CA_CERT_FILE = "/app/certificates/supabase-root-ca.crt"
+  dockerfile = 'Dockerfile'
 
 [deploy]
   release_command = "/app/bin/review_project eval 'ReviewProject.Release.migrate()'"
 
+[env]
+  DATABASE_CA_CERT_FILE = '/app/certificates/supabase-root-ca.crt'
+  DATABASE_SSL = 'true'
+  ECTO_IPV6 = 'true'
+  PHX_HOST = 'review-project-staging.fly.dev'
+  PHX_SERVER = 'true'
+  POOL_SIZE = '3'
+  PORT = '8080'
+
 [http_service]
   internal_port = 8080
   force_https = true
-  auto_stop_machines = "off"
+  auto_stop_machines = 'off'
   auto_start_machines = true
   min_machines_running = 1
 
   [[http_service.checks]]
-    interval = "30s"
-    timeout = "5s"
-    grace_period = "30s"
-    method = "GET"
-    path = "/healthz"
-    protocol = "http"
+    interval = '30s'
+    timeout = '5s'
+    grace_period = '30s'
+    method = 'GET'
+    path = '/healthz'
+    protocol = 'http'
+
     [http_service.checks.headers]
-      X-Forwarded-Proto = "https"
+      X-Forwarded-Proto = 'https'
 
 [[vm]]
-  memory = "1gb"
-  cpu_kind = "shared"
+  memory = '1gb'
+  cpu_kind = 'shared'
   cpus = 1
