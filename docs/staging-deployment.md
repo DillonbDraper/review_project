@@ -75,7 +75,12 @@ No Fly commands, remote database connections or host configuration changes ran.
   590,892 / 617,556 bytes respectively).
 - Dashboard, mailbox and `/tidewave/mcp` returned 404. Existing echo spike
   returned 200 and remains a public-release risk. GET `/signaling` returned 404,
-  which does **not** prove the unconditional signaling WebSocket is absent.
+  which did **not** prove the then-unconditional signaling WebSocket was absent.
+  Source now registers `/signaling` only at compile time in `Mix.env() == :dev`;
+  production/staging (`MIX_ENV=prod`) and test builds exclude it. The retained
+  smoke image predates this gate and is outdated: rebuild and verify the packaged
+  endpoint socket registry before deployment. `/room-socket` remains the real
+  conference transport and is unchanged; the echo spike risk remains outstanding.
 - Every packaged `*.so*` was checked with `ldd`, using each library's own directory
   as `LD_LIBRARY_PATH` for bundled sibling dependencies: zero missing libraries.
   Bare `ldd` on FFmpeg provider libraries reports sibling SONAMEs missing without

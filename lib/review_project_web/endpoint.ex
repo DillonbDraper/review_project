@@ -19,12 +19,12 @@ defmodule ReviewProjectWeb.Endpoint do
     websocket: [connect_info: [session: @session_options]],
     longpoll: false
 
-  # Phase 0 spike: raw membrane_webrtc_plugin signaling over a plain Phoenix
-  # socket (no LiveView), used by the Hologram WebRTC integration spike so the
-  # Hologram-owned browser PeerConnection can negotiate with Membrane Source/Sink.
-  socket "/signaling", Membrane.WebRTC.PhoenixSignaling.Socket,
-    websocket: true,
-    longpoll: false
+  # Phase 0 spike only: never expose raw Membrane signaling in deployed builds.
+  if Mix.env() == :dev do
+    socket "/signaling", Membrane.WebRTC.PhoenixSignaling.Socket,
+      websocket: true,
+      longpoll: false
+  end
 
   if Application.compile_env(:review_project, :youtube_sync_spike, false) do
     socket "/dev/spikes/room-access-socket", ReviewProjectWeb.RoomSpikeSocket,
