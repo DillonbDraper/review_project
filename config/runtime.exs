@@ -79,8 +79,38 @@ if config_env() == :prod do
 
   maybe_ipv6 = if System.get_env("ECTO_IPV6") in ~w(true 1), do: [:inet6], else: []
 
+  database_ssl =
+    if System.get_env("DATABASE_SSL") in ~w(true 1) do
+      database_host = URI.parse(database_url).host || raise "DATABASE_URL must include a host"
+
+      extra_certs =
+        if path = System.get_env("DATABASE_CA_CERT_FILE") do
+          case path |> File.read!() |> :public_key.pem_decode() do
+            [] ->
+              raise "DATABASE_CA_CERT_FILE must contain PEM certificates"
+
+            entries ->
+              Enum.map(entries, fn
+                {:Certificate, der, :not_encrypted} -> der
+                _ -> raise "DATABASE_CA_CERT_FILE must contain only PEM certificates"
+              end)
+          end
+        else
+          []
+        end
+
+      [
+        verify: :verify_peer,
+        cacerts: extra_certs ++ :public_key.cacerts_get(),
+        server_name_indication: String.to_charlist(database_host),
+        customize_hostname_check: [match_fun: :public_key.pkix_verify_hostname_match_fun(:https)]
+      ]
+    else
+      false
+    end
+
   config :review_project, ReviewProject.Repo,
-    # ssl: true,
+    ssl: database_ssl,
     url: database_url,
     pool_size: String.to_integer(System.get_env("POOL_SIZE") || "10"),
     # For machines with several cores, consider starting multiple pools of `pool_size`
@@ -99,7 +129,7 @@ if config_env() == :prod do
       You can generate one by calling: mix phx.gen.secret
       """
 
-  host = System.get_env("PHX_HOST") || "example.com"
+  host = System.fetch_env!("PHX_HOST")
 
   config :review_project, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")
 

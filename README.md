@@ -15,6 +15,20 @@ To start your Phoenix server:
 
 Now you can visit [`localhost:4000`](http://localhost:4000) from your browser.
 
+## Tidewave MCP (development only)
+
+The development server exposes Tidewave at `http://localhost:4000/tidewave/mcp`.
+Connect an MCP client using Streamable HTTP with no authentication. In DreamCoder,
+add a URL connection named **Tidewave**, connect to discover its tools, select the
+approved tools and **Review Project**, save, and enable the connection. If MCP is
+off globally, enable it in App Settings as well.
+
+Restart `mix holo` (or `mix phx.server`) after first fetching the dependency so the
+running VM loads Tidewave. The dependency and endpoint plug are development-only;
+the hosted Tidewave toolbar is disabled. Keep the default localhost-only access:
+do not enable `allow_remote_access` for LAN testing. Runtime evaluation and SQL
+can modify application state and data, so use a disposable development database.
+
 ## Create a room and invite people
 
 Use the tracked Nix environment to supply the native libraries and asset tools:
