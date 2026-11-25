@@ -60,7 +60,26 @@ function bridge() {
     if (command.op === "set") { object[command.property] = unpack(command.value); return null; }
     return object[command.method](...args);
   };
-  const failure = error => ({status: "error", name: error.name || "Error", result: null});
+  const allowedName = error => ["Error", "OperationError", "InvalidStateError", "InvalidModificationError", "TypeError", "NotSupportedError", "NotAllowedError", "NotFoundError", "NotReadableError", "AbortError", "OverconstrainedError", "SecurityError", "SyntaxError", "RTCError"].includes(error?.name) ? error.name : "Error";
+  const failure = (error, command, group) => {
+    const name = allowedName(error);
+    const result = {status: "error", name, result: null};
+    if (!["setRemoteDescription", "setLocalDescription", "addIceCandidate", "replaceTrack", "addTrack", "removeTrack", "addTransceiver"].includes(command?.method)) return result;
+    // Never inspect message, stack, SDP, candidates or configuration. Even
+    // exception names and native states must match finite vocabularies.
+    const pc = [...(group?.objects || [])].map(id => objects.get(id)).find(object => instance(object, "RTCPeerConnection"));
+    const state = (key, allowed) => allowed.includes(pc?.[key]) ? pc[key] : "unknown";
+    const diagnostic = {
+      operation: command.method, name,
+      reason: ({InvalidStateError: "invalid-state", InvalidModificationError: "renegotiation-required", TypeError: "invalid-input", SyntaxError: "invalid-description", NotSupportedError: "unsupported-operation", OperationError: "operation-rejected"})[name] || "unclassified",
+      signalingState: state("signalingState", ["stable", "have-local-offer", "have-remote-offer", "have-local-pranswer", "have-remote-pranswer", "closed"]),
+      iceConnectionState: state("iceConnectionState", ["new", "checking", "connected", "completed", "disconnected", "failed", "closed"]),
+      connectionState: state("connectionState", ["new", "connecting", "connected", "disconnected", "failed", "closed"]),
+      iceGatheringState: state("iceGatheringState", ["new", "gathering", "complete"])
+    };
+    console.warn("Conference operation failed", diagnostic);
+    return {...result, diagnostic};
+  };
   const close = name => {
     const group = groups.get(name);
     if (!group) return;
@@ -95,7 +114,7 @@ function bridge() {
       if (value !== generation) return failure(new Error("Conference ended"));
       const group = groupFor(name);
       try { return {status: "ok", result: command.op === "keep" ? keep(unpack(command.value), group) : pack(execute(command), group)}; }
-      catch (error) { return failure(error); }
+      catch (error) { return failure(error, command, group); }
     },
     cancel(value, name, key) {
       if (value !== generation) return;
@@ -119,14 +138,14 @@ function bridge() {
       const group = groupFor(name);
       let pending;
       try { pending = execute(command); }
-      catch (error) { dispatch({generation: value, group: name, ...metadata, ...failure(error)}); return; }
+      catch (error) { dispatch({generation: value, group: name, ...metadata, ...failure(error, command, group)}); return; }
       Promise.resolve(pending).then(result => {
         if (value !== generation || groups.get(name) !== group) { release(result); return; }
         // Own capture tracks immediately, before Elixir receives the stream handle.
         if (instance(result, "MediaStream")) result.getTracks().forEach(track => pack(track, group));
         dispatch({generation: value, group: name, ...metadata, status: "ok", result: pack(result, group)});
       }, error => {
-        if (value === generation && groups.get(name) === group) dispatch({generation: value, group: name, ...metadata, ...failure(error)});
+        if (value === generation && groups.get(name) === group) dispatch({generation: value, group: name, ...metadata, ...failure(error, command, group)});
       });
     },
     listen(value, name, ref, event, fields, metadata) {

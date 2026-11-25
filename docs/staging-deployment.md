@@ -1,5 +1,65 @@
 # Fly staging release preparation
 
+## Authorized single existing-image retry (2026-11-25 UTC)
+
+Exactly one separately authorized retry used the existing image, without rebuild,
+with the configured migration release command enabled:
+`flyctl deploy --app review-project --config /home/dillon/review_project/fly.staging.toml --image registry.fly.io/review-project@sha256:07127d9fc1a085c8bf8dc77e72f149ab7841980ad63808e33e155a4ef8554e96 --ha=false .`
+Preflight inspected the `review-project` / `iad` configuration, public ICE config
+path and native secret-name/file-path mapping; flyctl validated the config and
+found existing image `img_y7nxpkwqnjynp8w2` remotely.
+
+**Release v5 failed before web update.** Flyctl invoked
+`/app/bin/review_project eval 'ReviewProject.Release.migrate()'`, created release
+Machine `83dd002f619e18`, then exited **1**, timing out waiting for `stopped`.
+Post-failure Machine events show pending/created at `2026-11-25T01:03:02–03Z`
+and destruction by `flyd` at `01:03:18.298Z`, with no started/stopped event.
+Instance-scoped bounded logs show only image pull at `01:03:04Z` and successful
+image preparation at `01:03:17Z` (13.541 seconds), not migration/application
+output. Migration completion is not established; this does not diagnose a secret
+permission, application or database fault. No second retry or guessed fix ran.
+
+Afterward, status and release history confirmed the sole app Machine remained
+`846645a2641128`, release v3, `iad`, started, **1/1 checks passing**, using
+`review-project:deployment-1d9330ac0c60f12d282c6161565c607b`.
+HTTPS `/healthz` returned **200**. Old app availability was preserved; this is not
+TURN rollout success. New-release RPC config loading, injected-file mode/UID/GID
+and actual-runtime-user readability, and boolean-only ICE issuance verification
+remain blocked. Live media/relay and credential renewal gates remain unverified.
+No secret contents were read/output, no Roy or unrelated secret changes ran,
+and no source changes, commit or push were made. Only this deployment record was
+updated, preserving pre-existing working-tree changes.
+
+## Authorized TURN deployment attempt (2026-11-25 UTC)
+
+An explicitly authorized deployment to existing app `review-project` used
+`flyctl deploy --remote-only --app review-project --config /home/dillon/review_project/fly.staging.toml --ha=false`.
+Preflight validated the configuration, app/hostname, native `[[files]]` mapping
+and bundled public ICE metadata. Secret-name/status inspection confirmed
+`CONFERENCE_TURN_SECRET_B64` was **Deployed**; no secret values were read.
+The working tree was on `staging`, with untracked helper work preserved and no
+rebase reported. No commit, push, credential upload or unrelated secret change ran.
+
+The remote build succeeded (574 MB), producing
+`registry.fly.io/review-project:deployment-01M881V6P0RRXBRGS1GE6JHAJ1`, digest
+`sha256:07127d9fc1a085c8bf8dc77e72f149ab7841980ad63808e33e155a4ef8554e96`.
+**Release v4 failed; the TURN image was not rolled out.** The configured migration
+release Machine `8911135f017d48` prepared the image, then was destroyed without
+recorded started/stopped events or application/migration output. Flyctl exited 1:
+`release command failed - aborting deployment`, timing out waiting for `stopped`.
+This evidence does not establish a packaging, permission or migration error; the
+Machine lifecycle failure needs investigation before another deployment. No blind
+retry, timeout workaround, replacement provisioning or permission changes ran.
+
+After failure, exactly one app Machine remained: `846645a2641128`, `iad`, started,
+1/1 health checks, shared one vCPU / 1024 MB, no volume. It still ran complete
+release v3 image `review-project:deployment-1d9330ac0c60f12d282c6161565c607b`.
+`https://review-project.fly.dev/healthz` returned **200**. This is old-release
+availability evidence, not TURN rollout success. Runtime RPC validation of the new
+ICE configuration, injected secret ownership/mode/readability as the app UID and
+credential issuance remains blocked because the new release never started. No
+live media/email tests or Roy access/changes ran.
+
 ## TURN deployment blocker (local configuration only)
 
 The staging draft now targets the actual `review-project` app and
