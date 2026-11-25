@@ -34,6 +34,50 @@ defmodule ReviewProject.Rooms.ICETest do
              ICE.issue("seat", %{config | "secret_file" => path <> "missing"}, 1000)
   end
 
+  @tag :tmp_dir
+  test "staging metadata issues credentials only with a usable secret file", %{tmp_dir: dir} do
+    config = File.read!("priv/conference/staging-ice.json") |> Jason.decode!()
+
+    assert Enum.sort(Map.keys(config)) ==
+             Enum.sort(["stun_urls", "turn_urls", "secret_file", "ttl_seconds"])
+
+    assert config["stun_urls"] == ["stun:turn.whatgrabsme.org:3478"]
+
+    assert config["turn_urls"] == [
+             "turn:turn.whatgrabsme.org:3478?transport=udp",
+             "turn:turn.whatgrabsme.org:3478?transport=tcp",
+             "turns:turn.whatgrabsme.org:5349?transport=tcp"
+           ]
+
+    assert config["ttl_seconds"] == 3600
+    assert config["secret_file"] == "/app/secrets/conference-turn-secret"
+    path = Path.join(dir, "dummy-secret")
+    config = Map.put(config, "secret_file", path)
+    assert ICE.issue("seat", config, 1000) == {:error, :ice_unavailable}
+
+    for contents <- ["", "short", String.duplicate(" ", 40)] do
+      File.write!(path, contents)
+      assert ICE.issue("seat", config, 1000) == {:error, :ice_unavailable}
+    end
+
+    secret = String.duplicate("dummy-only", 4)
+    File.write!(path, secret <> "\n")
+
+    assert {:ok, %{servers: [stun, relay], expires_at: 4600, refresh_after: 1800}} =
+             ICE.issue("seat", config, 1000)
+
+    assert stun.urls == config["stun_urls"]
+    assert relay.urls == config["turn_urls"]
+    assert relay.username == "4600:seat"
+    assert relay.credential == Base.encode64(:crypto.mac(:hmac, :sha, secret, "4600:seat"))
+    refute inspect(relay) =~ secret
+    File.rm!(path)
+    assert ICE.issue("seat", config, 1000) == {:error, :ice_unavailable}
+
+    assert ICE.issue("seat", Map.put(config, "secret_file", dir), 1000) ==
+             {:error, :ice_unavailable}
+  end
+
   test "absent relay configuration is direct and invalid configuration fails closed" do
     assert {:ok, %{servers: [], expires_at: nil, refresh_after: nil}} = ICE.issue("seat", nil, 0)
 

@@ -40,6 +40,11 @@ COPY --from=build --chown=nobody:nogroup /app/_build/prod/rel/review_project ./
 COPY --chmod=0444 priv/certificates/supabase-root-ca.crt /app/certificates/supabase-root-ca.crt
 RUN chmod 0555 /app/certificates
 ENV DATABASE_CA_CERT_FILE=/app/certificates/supabase-root-ca.crt
+# Public ICE metadata only; never copy the TURN shared secret into an image.
+COPY --chmod=0444 priv/conference/staging-ice.json /app/conference/staging-ice.json
+# Root-owned parent is traversable by nobody, not writable by the application.
+# Fly-injected file ownership/mode must be verified separately before deployment.
+RUN chmod 0555 /app/conference && mkdir -p /app/secrets && chmod 0755 /app/secrets
 USER nobody
 EXPOSE 8080
 CMD ["/app/bin/review_project", "start"]

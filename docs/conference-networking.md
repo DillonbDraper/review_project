@@ -54,6 +54,35 @@ independent and retryable. Navigation, reload, explicit leave, seat replacement,
 logout, and page removal clear these preferences. Peer replacement alone keeps
 local capture, other peers, the review iframe, and chat intact.
 
+## Staging metadata and secret injection (deployment prerequisite)
+
+`priv/conference/staging-ice.json` is public metadata for
+`turn.whatgrabsme.org`: STUN 3478, TURN UDP/TCP 3478 and TURN TLS/TCP 5349,
+with a 3600-second lifetime. Docker copies it read-only to
+`/app/conference/staging-ice.json`; `fly.staging.toml` selects that absolute path.
+No shared secret is bundled. The release also contains the public JSON in `priv`.
+
+**Do not deploy this configuration until the actual app secret has been provisioned
+and injection verified separately.** The native Fly `[[files]]` stanza maps
+`CONFERENCE_TURN_SECRET_B64` to `/app/secrets/conference-turn-secret`. The Fly
+secret value must be Base64 encoding of the shared secret matching Roy's coturn
+REST secret (not Base64 text stored in the resulting file). No real value was read,
+copied, uploaded or set for this change. Ordinary environment-secret delivery alone
+is not a substitute for the file; the application reads only `secret_file`.
+
+Fly documents secret-backed files in its
+[configuration reference](https://fly.io/docs/reference/configuration/#files).
+The injected file's owner/mode, parent-directory handling and release-command
+Machine behavior have **not** been verified. Docker prepares a root-owned 0755
+`/app/secrets` directory; it is not application-writable. The application runs as
+`nobody`. Before approving deployment, confirm that injected bytes are readable by
+that runtime user, not unnecessarily exposed, and available wherever required,
+including release Machines. Do not assume ownership/mode guarantees or work around
+this with world-writable directories or real secrets in the image. Missing,
+unreadable, empty or short secret files fail credential issuance closed, while
+room admission/direct connectivity remain available. A local dummy bind mount
+cannot establish Fly injection compatibility.
+
 ## Local relay verification
 
 An isolated coturn on loopback or the existing development coturn VM is enough

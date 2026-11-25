@@ -9,6 +9,11 @@ primary_region = 'iad'
 [build]
   dockerfile = 'Dockerfile'
 
+# Provision separately before deploying; Base64 of the matching coturn secret.
+[[files]]
+  guest_path = "/app/secrets/conference-turn-secret"
+  secret_name = "CONFERENCE_TURN_SECRET_B64"
+
 [deploy]
   release_command = "/app/bin/review_project eval 'ReviewProject.Release.migrate()'"
 
@@ -16,7 +21,8 @@ primary_region = 'iad'
   DATABASE_CA_CERT_FILE = '/app/certificates/supabase-root-ca.crt'
   DATABASE_SSL = 'true'
   ECTO_IPV6 = 'true'
-  PHX_HOST = 'review-project-staging.fly.dev'
+  PHX_HOST = 'review-project.fly.dev'
+  CONFERENCE_ICE_CONFIG = '/app/conference/staging-ice.json'
   PHX_SERVER = 'true'
   POOL_SIZE = '3'
   PORT = '8080'

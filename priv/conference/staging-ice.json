@@ -1,0 +1,10 @@
+{
+  "stun_urls": ["stun:turn.whatgrabsme.org:3478"],
+  "turn_urls": [
+    "turn:turn.whatgrabsme.org:3478?transport=udp",
+    "turn:turn.whatgrabsme.org:3478?transport=tcp",
+    "turns:turn.whatgrabsme.org:5349?transport=tcp"
+  ],
+  "secret_file": "/app/secrets/conference-turn-secret",
+  "ttl_seconds": 3600
+}

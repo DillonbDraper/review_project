@@ -1,5 +1,29 @@
 # Fly staging release preparation
 
+## TURN deployment blocker (local configuration only)
+
+The staging draft now targets the actual `review-project` app and
+`review-project.fly.dev`, not the stale `review-project-staging` placeholder.
+`CONFERENCE_ICE_CONFIG=/app/conference/staging-ice.json` selects bundled public
+metadata. **Do not auto-deploy this change before separately provisioning the
+missing `CONFERENCE_TURN_SECRET_B64` app secret and verifying native Fly file
+injection.** Its value must be Base64 of the matching Roy coturn shared secret;
+no value belongs in source, build arguments, logs or browser configuration.
+No real secret was accessed or provisioned by this local change.
+
+See [conference networking](conference-networking.md#staging-metadata-and-secret-injection-deployment-prerequisite)
+for the exact file contract and unresolved Fly owner/mode, parent-directory and
+release-Machine checks. The image prepares a root-owned, non-app-writable parent;
+it does not guarantee that Fly's injected file is readable by `nobody`. Do not
+weaken permissions blindly. These prerequisites also apply before enabling the
+automatic staging workflow. Existing historical deployment evidence below does
+not validate this new injection contract.
+
+The local staging smoke generates an ephemeral dummy secret, mounts only that
+file read-only at the expected path for migrations and the app, and checks HMAC
+credential issuance offline on its internal Docker network. It removes the dummy
+file on exit. This is not a live relay test or proof of Fly injection semantics.
+
 ## GitHub Actions review draft (not enabled or executed)
 
 `.github/workflows/staging.yml` is a **draft for a public repository**. Creating
