@@ -94,10 +94,13 @@ defmodule ReviewProject.Rooms.MediaTest do
   end
 
   test "global quota and disk reserve include outstanding uploads", %{server: s} do
+    clock = start_supervised!({Agent, fn -> 0 end})
+
     :sys.replace_state(s, fn state ->
       %{
         state
-        | opts:
+        | clock: fn -> Agent.get(clock, & &1) end,
+          opts:
             Keyword.merge(state.opts,
               max_total_bytes: 3,
               min_free_bytes: 10,
@@ -114,8 +117,82 @@ defmodule ReviewProject.Rooms.MediaTest do
       %{state | opts: Keyword.put(state.opts, :free_bytes, fn _ -> {:ok, 10} end)}
     end)
 
+    Agent.update(clock, fn _ -> 1_000 end)
     assert {:error, :insufficient_disk} = Media.append("one", a.id, "x", s)
     assert nil == Media.staged("one", s)
+  end
+
+  test "disk checks refresh at byte, time and completion boundaries", %{server: s} do
+    clock = start_supervised!({Agent, fn -> 0 end})
+    parent = self()
+
+    :sys.replace_state(s, fn state ->
+      %{
+        state
+        | clock: fn -> Agent.get(clock, & &1) end,
+          opts:
+            Keyword.merge(state.opts,
+              free_check_bytes: 4,
+              free_bytes: fn _ ->
+                send(parent, :disk_check)
+                {:ok, 3_000_000_000}
+              end
+            )
+      }
+    end)
+
+    assert {:ok, a} = Media.reserve("r", "x", 8, s)
+    assert_receive :disk_check
+    assert :ok = Media.append("r", a.id, "ab", s)
+    assert :ok = Media.append("r", a.id, "cd", s)
+    refute_receive :disk_check, 0
+    assert :ok = Media.append("r", a.id, "e", s)
+    assert_receive :disk_check
+    Agent.update(clock, fn _ -> 1_000 end)
+    assert :ok = Media.append("r", a.id, "f", s)
+    assert_receive :disk_check
+    assert :ok = Media.append("r", a.id, "gh", s)
+    refute_receive :disk_check, 0
+    assert {:ok, _} = Media.finish("r", a.id, s)
+    assert_receive :disk_check
+    refute_receive :disk_check, 0
+  end
+
+  test "an unknown disk observation during transfer removes the partial file", %{
+    server: s,
+    root: root
+  } do
+    clock = start_supervised!({Agent, fn -> 0 end})
+    :sys.replace_state(s, &%{&1 | clock: fn -> Agent.get(clock, fn value -> value end) end})
+    assert {:ok, a} = Media.reserve("r", "x", 3, s)
+    assert :ok = Media.append("r", a.id, "a", s)
+
+    :sys.replace_state(
+      s,
+      &%{&1 | opts: Keyword.put(&1.opts, :free_bytes, fn _ -> {:error, :disk_unknown} end)}
+    )
+
+    Agent.update(clock, fn _ -> 1_000 end)
+    assert {:error, :insufficient_disk} = Media.append("r", a.id, "b", s)
+    assert Media.staged("r", s) == nil
+    assert File.ls!(root) == []
+  end
+
+  test "completion checks disk again before validating a fully received file", %{
+    server: s,
+    root: root
+  } do
+    original = :sys.get_state(s).opts[:free_bytes]
+
+    for result <- [{:ok, 0}, {:error, :disk_unknown}] do
+      :sys.replace_state(s, &%{&1 | opts: Keyword.put(&1.opts, :free_bytes, original)})
+      assert {:ok, a} = Media.reserve("r", "x", 1, s)
+      assert :ok = Media.append("r", a.id, "a", s)
+      :sys.replace_state(s, &%{&1 | opts: Keyword.put(&1.opts, :free_bytes, fn _ -> result end)})
+      assert {:error, :insufficient_disk} = Media.finish("r", a.id, s)
+      assert Media.staged("r", s) == nil
+      assert File.ls!(root) == []
+    end
   end
 
   test "actual byte overflow and mismatch remove partial files", %{server: s, root: root} do

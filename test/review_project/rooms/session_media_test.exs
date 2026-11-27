@@ -98,15 +98,49 @@ defmodule ReviewProject.Rooms.SessionMediaTest do
     guest = transport()
     {:ok, _} = Session.join(c.session, nil, identity, c.invitation_token, "Guest", guest)
     assert {:error, :not_controller} = Session.http_request(c.session, nil, identity, :can_upload)
+
+    assert {:error, :not_controller} =
+             Session.http_request(c.session, nil, identity, :continue_upload)
+
     assert {:error, :not_joined} = Session.http_request(c.session, nil, nil, :can_upload)
     assert {:ok, _} = Session.request(c.session, c.scope, c.owner, :leave)
+    assert {:error, :not_joined} = Session.http_request(c.session, c.scope, nil, :continue_upload)
     advance(c, 10_000)
     assert {:ok, token} = Session.http_request(c.session, nil, identity, :can_upload)
+    assert {:ok, ^token} = Session.http_request(c.session, nil, identity, :continue_upload)
     {:ok, _} = Session.join(c.session, c.scope, nil, nil, "Owner", c.owner)
     assert {:error, :not_controller} = Session.http_request(c.session, nil, identity, :can_upload)
+
+    assert {:error, :not_controller} =
+             Session.http_request(c.session, nil, identity, :continue_upload)
+
     assert {:ok, next} = Session.http_request(c.session, c.scope, nil, :can_upload)
     refute token == next
   end
+
+  test "upload continuation verifies the live seat and authority without database queries", c do
+    assert {:ok, token} = Session.http_request(c.session, c.scope, nil, :can_upload)
+    handler = {__MODULE__, make_ref()}
+
+    :ok =
+      :telemetry.attach(
+        handler,
+        [:review_project, :repo, :query],
+        &__MODULE__.record_query/4,
+        self()
+      )
+
+    on_exit(fn -> :telemetry.detach(handler) end)
+
+    for _ <- 1..10 do
+      assert {:ok, ^token} = Session.http_request(c.session, c.scope, nil, :continue_upload)
+    end
+
+    assert {:error, :not_joined} = Session.http_request(c.session, nil, nil, :continue_upload)
+    refute_receive :upload_query, 0
+  end
+
+  def record_query(_event, _measurements, _metadata, parent), do: send(parent, :upload_query)
 
   test "deliberate activity resets idle but conference reports and snapshots do not", c do
     advance(c, 3_599_999)

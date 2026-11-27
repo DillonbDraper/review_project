@@ -146,6 +146,16 @@ defmodule ReviewProject.Rooms.Session do
 
   # HTTP requests carry the verified signed browser identity, never a client PID.
   # Only a currently connected seat can stream or stage media.
+  def handle_call({:http_request, scope, identity, :continue_upload}, _from, state) do
+    # Upload boundaries verify durable room state. Between them, use the live
+    # coordinator's seat/controller state; join/leave/close and maintenance
+    # already update it. Do not run database-backed maintenance per body chunk.
+    case http_member(state, scope, identity) do
+      nil -> {:reply, {:error, :not_joined}, state}
+      {id, member} -> operate(:can_upload, id, member, state)
+    end
+  end
+
   def handle_call({:http_request, scope, identity, operation}, _from, state) do
     state = maintain_state(state)
 

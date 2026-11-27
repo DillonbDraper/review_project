@@ -29,6 +29,7 @@ defmodule ReviewProjectWeb.RoomMediaController do
       # the service also monitors us if the transport terminates without unwinding.
       try do
         with {:ok, conn} <- receive_body(conn, room, asset.id, authority, pid),
+             :ok <- same_authority(conn, room, authority),
              {:ok, ready} <- media_call(fn -> Media.finish(room, asset.id, pid) end),
              :ok <- same_authority(conn, room, authority) do
           conn |> private_headers() |> json(ready)
@@ -109,7 +110,7 @@ defmodule ReviewProjectWeb.RoomMediaController do
   end
 
   defp receive_body(conn, room, id, authority, pid) do
-    with :ok <- same_authority(conn, room, authority) do
+    with :ok <- same_authority(conn, room, authority, :continue_upload) do
       case read_body(conn, length: @chunk_bytes, read_length: @chunk_bytes, read_timeout: 15_000) do
         {:more, bytes, conn} ->
           with :ok <- media_call(fn -> Media.append(room, id, bytes, pid) end),
@@ -124,8 +125,8 @@ defmodule ReviewProjectWeb.RoomMediaController do
     end
   end
 
-  defp same_authority(conn, room, authority) do
-    case authorize(conn, room, :can_upload) do
+  defp same_authority(conn, room, authority, operation \\ :can_upload) do
+    case authorize(conn, room, operation) do
       {:ok, ^authority} -> :ok
       {:ok, _} -> {:error, :stale_authority}
       {:error, reason} -> {:error, reason}

@@ -214,6 +214,48 @@ defmodule ReviewProjectWeb.RoomMediaControllerTest do
     assert %{size: 600_000, status: :ready} = Media.staged(ctx.room.id)
   end
 
+  test "multi-chunk upload verifies durable room state only at upload boundaries", ctx do
+    handler = {__MODULE__, make_ref()}
+
+    :ok =
+      :telemetry.attach(
+        handler,
+        [:review_project, :repo, :query],
+        &__MODULE__.record_room_query/4,
+        self()
+      )
+
+    on_exit(fn -> :telemetry.detach(handler) end)
+
+    assert %{"status" => "ready"} =
+             upload(ctx, String.duplicate("v", 2_000_000)) |> json_response(200)
+
+    # Admission, after receiving, and after validation; independent of chunk count.
+    for _ <- 1..3, do: assert_receive(:room_open_query)
+    refute_receive :room_open_query, 0
+  end
+
+  test "durable closure during validation rejects completion even before its notification", ctx do
+    :sys.replace_state(Media, fn s ->
+      probe = fn _ ->
+        {:ok, _} =
+          ReviewProject.Rooms.Store.close_room(ctx.scope, ctx.room.id, DateTime.utc_now())
+
+        {:ok, %{mime: "video/mp4", duration: 10.0}}
+      end
+
+      %{s | opts: Keyword.put(s.opts, :probe, probe)}
+    end)
+
+    assert %{"error" => "room_closed"} = upload(ctx, "video") |> json_response(404)
+    assert Media.staged(ctx.room.id) == nil
+  end
+
+  def record_room_query(_event, _measurements, %{source: "rooms"}, parent),
+    do: send(parent, :room_open_query)
+
+  def record_room_query(_event, _measurements, _metadata, _parent), do: :ok
+
   test "authority loss during validation rejects completion and frees ready bytes", ctx do
     :sys.replace_state(Media, fn s ->
       probe = fn _ ->

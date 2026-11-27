@@ -20,6 +20,114 @@ uploads. The 1 GiB per-file/global quotas, one concurrent upload, 1 GiB free-dis
 reserve, validation, private delivery and cleanup rules remain in force. No
 deployment, provisioning or remote configuration change was performed here.
 
+## Upload overhead investigation, 2026-11-27
+
+The owner reported multi-minute uploads in the deployed environment and requested
+investigation before deciding whether to replace staging with host-device delivery.
+No deployed timing, credentials, configuration or media were accessed in this
+investigation; the measurements below are local controls, not staging results.
+
+**Initial baseline, before optimization:** the raw HTTP receive loop reads at
+most 256 KiB at a time. Before each read,
+`same_authority/3` calls `Rooms.media_request/4`, then `Session.http_request/4`.
+That handler calls `Store.open?/2`, which performs `Repo.exists?/1` against the
+rooms table, before checking the live seat/controller and authority revision.
+The append then runs `df -Pk` synchronously through `Media.free_bytes/1` before
+writing. Consequently, 1 GiB in full-sized chunks requires about **4,096 serial
+database round trips and 4,096 df subprocesses**, plus boundary checks. Smaller
+reads can require more. This also occupies the room coordinator while each
+database check completes.
+
+`scripts/upload_overhead_benchmark.exs` decomposes these paths with actual Media
+writes and room authorization calls, a local SQL sandbox whose fixture writes
+roll back, and exclusive disposable media roots. It repeats each case three times
+using a reusable 256 KiB binary; payload files are canceled/deleted. The delayed
+cases inject an explicitly synthetic delay after every real local query. They do
+not measure real remote database latency, HTTP/TLS/proxy behavior, WAN upload,
+media validation or durable disk throughput. Fixed-free-space results are a
+benchmark control only and do not change production admission checks.
+
+| Case | Payload | Median elapsed | Measured work |
+| --- | --- | --- | --- |
+| Append with real df | 64 MiB | 321.728 ms | 256 df calls, median 297.944 ms inside disk checks |
+| Append with fixed free-space control | 64 MiB | 9.752 ms | Same 256 writes, no df processes |
+| Authorization + append, local database | 16 MiB | 96.398 ms | Exactly 64 real queries and 64 df calls |
+| Same path + synthetic 20 ms/query | 16 MiB | 1,459.716 ms | Exactly 64 real queries and 64 df calls |
+| Same path + synthetic 50 ms/query | 16 MiB | 3,388.521 ms | Exactly 64 real queries and 64 df calls |
+
+Initial report: `/tmp/review-upload-overhead.json`. The extended harness now
+reproduces legacy controls alongside the optimized paths below:
+
+```sh
+nix develop --command env MIX_ENV=test REPORT=/tmp/review-upload-overhead-optimized.json \
+  mix run --no-start scripts/upload_overhead_benchmark.exs
+```
+
+At 4,096 chunks, database round trips alone add **81.92 seconds at 20 ms** or
+**204.8 seconds at 50 ms**, excluding all transfer/writing work. These are
+arithmetic examples, not measurements of the deployed database. The df work
+projects to about five seconds per GiB on this workstation; a weaker VM may
+differ. The serial database dependency is therefore the stronger candidate for
+the reported minutes-long delay, and should be measured in staging before
+attributing it to VM CPU or changing delivery architecture.
+
+The initial investigation proposed separating durable room checks from live
+authority checks, plus bounded disk accounting. It left runtime behavior
+unchanged. The subsequent implementation is recorded below.
+
+### Implemented optimization and local comparison
+
+Upload continuation now uses `Session.http_request/4` with `:continue_upload`.
+This checks the connected seat, enabled flag and current controller directly in
+the live coordinator, returning the current epoch/authority revision for the
+request's existing equality guard. It performs no SQL or database-backed
+maintenance. Join, departure, replacement, handoff and normal room-close
+notifications update/stop that same coordinator; routine maintenance still owns
+timed transitions and expiry. Only the continuation path bypasses SQL: status,
+stream admission and other room HTTP operations retain durable room checks.
+
+The POST still queries durable room state at admission, after receiving bytes
+before probing, and after probing before returning ready metadata. Thus the
+normal upload has **three room-open queries**, independent of chunk count.
+Database errors at those boundaries still fail the request. A delayed/missing
+close notification can permit continued receiving until the boundary check, but
+cannot publish a completed upload for a durably closed room. The design remains
+single-node and relies on the live coordinator for prompt local revocation.
+
+Media takes a fresh free-space measurement before each reservation, budgeting
+the full declared size and all outstanding reserved bytes, and before validation
+of a completely received file. Between observations it subtracts each successful
+write from the last observed free space. Before another append it refreshes if
+the measurement is **one second old**, the next write would exceed **32 MiB**
+since the last measurement, or the remaining estimate cannot cover the write
+above the reserve. Unknown/insufficient fresh results retire the partial file.
+This bounds observation age/bytes during writing; unrelated processes can still
+consume disk between measurements. File-write errors retain their cleanup path.
+The 1 GiB reserve, file/global caps, concurrency and retention rules are unchanged.
+
+Three-repeat comparison using real local authorization and writes:
+
+| 16 MiB upload-loop case | Legacy median | Optimized median | Queries, legacy → optimized |
+| --- | --- | --- | --- |
+| Local database | 101.184 ms | 5.172 ms | 64 → 3 |
+| Synthetic 20 ms/query | 1,468.677 ms | 68.060 ms | 64 → 3 |
+| Synthetic 50 ms/query | 3,388.890 ms | 157.936 ms | 64 → 3 |
+
+Optimized measurements include all three boundary queries, completion's fresh
+disk check and a stubbed probe; legacy controls force the original per-chunk df
+and durable-authority checks. Both exclude initial media reservation and actual
+format probing. The optimized 16 MiB cases made one measured df call, plus the
+unmeasured reservation check; the 64 MiB case took **14.957 ms** with three
+queries and two measured df calls, plus reservation. Network, proxy, real format
+validation and actual Fly performance remain outside this comparison. Report:
+`/tmp/review-upload-overhead-optimized.json`. No deployment was performed.
+
+Regression coverage checks SQL-free continuation, fixed boundary-query count,
+departure/handoff revocation, durable closure during validation, byte/time disk
+refresh bounds, unknown/insufficient disk results and completion cleanup. Existing
+real transport and coordinator-restart coverage remains green. `mix precommit`
+passed **474 tests** after these changes.
+
 ## Current policy: 1 GiB and AV1 accepted
 
 On 2026-11-27, after reviewing the local original-file results below, the owner
@@ -102,6 +210,8 @@ blocked/buffering-player recovery remain participant-local.
 | `:upload_timeout_ms` | 120,000 without appended bytes |
 | `:probe_timeout_ms` | 15,000 service deadline; native process deadline 12 seconds |
 | `:sweep_interval_ms` | 10,000 for stalled uploads/retiring resources |
+| `:free_check_bytes` | 33,554,432 (32 MiB written between fresh disk checks) |
+| `:free_check_interval_ms` | 1,000 (refresh before appending once the observation is this old) |
 
 These global limits are conservative **unmeasured engineering guardrails**, not
 measured Fly capacity or an approved increase of the per-file cap. Ready files
@@ -151,8 +261,9 @@ Endpoint parsing explicitly leaves **all** `/room-media` bodies unread, avoiding
 multipart disk spooling ahead of authorization. POST accepts raw octet-stream;
 DELETE parses only a bounded 4 KiB JSON body after controller authorization.
 Mutations retain header CSRF. Authentication/quota checks happen before body
-reads. Upload authority is checked before each body chunk and after probing;
-changed epoch/authority revision rejects completion. Activation uses the normal
+reads. Live upload authority is checked in memory before each body chunk;
+durable room checks run at admission, after receiving, and after probing.
+Changed epoch/authority revision rejects completion. Activation uses the normal
 controller/epoch/authority/playback-revision guards.
 
 | Method/path | Contract |

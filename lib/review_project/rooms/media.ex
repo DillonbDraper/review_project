@@ -10,7 +10,9 @@ defmodule ReviewProject.Rooms.Media do
     probe_timeout_ms: 15_000,
     upload_timeout_ms: 120_000,
     sweep_interval_ms: 10_000,
-    max_chunk_bytes: 1_048_576
+    max_chunk_bytes: 1_048_576,
+    free_check_bytes: 33_554_432,
+    free_check_interval_ms: 1_000
   ]
 
   def start_link(opts \\ []) do
@@ -66,6 +68,7 @@ defmodule ReviewProject.Rooms.Media do
       opts: opts,
       root: root,
       files: %{},
+      disk_space: nil,
       clock: Keyword.get(opts, :clock, fn -> System.monotonic_time(:millisecond) end)
     }
 
@@ -94,38 +97,8 @@ defmodule ReviewProject.Rooms.Media do
       uploads >= s.opts[:max_uploads] ->
         {:reply, {:error, :too_many_uploads}, s}
 
-      not free?(s, size + Enum.sum(Enum.map(s.files, fn {_, a} -> a.size - a.received end))) ->
-        {:reply, {:error, :insufficient_disk}, s}
-
       true ->
-        id = Ecto.UUID.generate()
-        path = Path.join(s.root, id <> ".stage")
-
-        case File.open(path, [:write, :binary, :exclusive]) do
-          {:ok, io} ->
-            File.chmod!(path, 0o600)
-
-            a = %{
-              id: id,
-              name: safe_name(name),
-              size: size,
-              received: 0,
-              path: path,
-              io: io,
-              owner: pid,
-              owner_ref: Process.monitor(pid),
-              readers: %{},
-              status: :uploading,
-              touched: s.clock.(),
-              probe: nil,
-              pending: nil
-            }
-
-            {:reply, {:ok, public(a)}, put(s, room, a)}
-
-          _ ->
-            {:reply, {:error, :disk_error}, s}
-        end
+        reserve_file(s, room, name, size, pid)
     end
   end
 
@@ -156,18 +129,8 @@ defmodule ReviewProject.Rooms.Media do
           a.received + byte_size(bytes) > a.size ->
             {:reply, {:error, :too_large}, retire(s, room)}
 
-          not free?(s, byte_size(bytes)) ->
-            {:reply, {:error, :insufficient_disk}, retire(s, room)}
-
           true ->
-            case IO.binwrite(a.io, bytes) do
-              :ok ->
-                {:reply, :ok,
-                 put(s, room, %{a | received: a.received + byte_size(bytes), touched: s.clock.()})}
-
-              _ ->
-                {:reply, {:error, :disk_error}, retire(s, room)}
-            end
+            append_bytes(s, room, a, bytes)
         end
 
       %{id: ^id} ->
@@ -178,24 +141,99 @@ defmodule ReviewProject.Rooms.Media do
     end
   end
 
+  defp reserve_file(s, room, name, size, pid) do
+    needed = size + Enum.sum(Enum.map(s.files, fn {_, a} -> a.size - a.received end))
+    {enough?, s} = refresh_disk_space(s, needed)
+
+    if enough? do
+      id = Ecto.UUID.generate()
+      path = Path.join(s.root, id <> ".stage")
+
+      case File.open(path, [:write, :binary, :exclusive]) do
+        {:ok, io} ->
+          File.chmod!(path, 0o600)
+
+          a = %{
+            id: id,
+            name: safe_name(name),
+            size: size,
+            received: 0,
+            path: path,
+            io: io,
+            owner: pid,
+            owner_ref: Process.monitor(pid),
+            readers: %{},
+            status: :uploading,
+            touched: s.clock.(),
+            probe: nil,
+            pending: nil
+          }
+
+          {:reply, {:ok, public(a)}, put(s, room, a)}
+
+        _ ->
+          {:reply, {:error, :disk_error}, s}
+      end
+    else
+      {:reply, {:error, :insufficient_disk}, s}
+    end
+  end
+
+  defp append_bytes(s, room, a, bytes) do
+    {enough?, s} = space_for_append(s, byte_size(bytes))
+
+    if enough? do
+      case IO.binwrite(a.io, bytes) do
+        :ok ->
+          space = %{
+            s.disk_space
+            | remaining: s.disk_space.remaining - byte_size(bytes),
+              spent: s.disk_space.spent + byte_size(bytes)
+          }
+
+          {:reply, :ok,
+           put(%{s | disk_space: space}, room, %{
+             a
+             | received: a.received + byte_size(bytes),
+               touched: s.clock.()
+           })}
+
+        _ ->
+          {:reply, {:error, :disk_error}, retire(s, room)}
+      end
+    else
+      {:reply, {:error, :insufficient_disk}, retire(s, room)}
+    end
+  end
+
   defp action(:cancel, room, %{owner: pid}, pid, _, s), do: {:reply, :ok, retire(s, room)}
 
   defp action(:finish, room, %{owner: pid, status: :uploading} = a, pid, from, s) do
     if a.received == a.size do
-      File.close(a.io)
-      parent = self()
-      probe = Keyword.get(s.opts, :probe, &ReviewProject.Rooms.MediaProbe.probe/1)
-      {worker, ref} = spawn_monitor(fn -> send(parent, {:probed, room, a.id, probe.(a.path)}) end)
-      timer = Process.send_after(self(), {:probe_timeout, room, a.id}, s.opts[:probe_timeout_ms])
+      {enough?, s} = refresh_disk_space(s, 0)
 
-      {:noreply,
-       put(s, room, %{
-         a
-         | io: nil,
-           status: :validating,
-           probe: {worker, ref, timer},
-           pending: from
-       })}
+      if enough? do
+        File.close(a.io)
+        parent = self()
+        probe = Keyword.get(s.opts, :probe, &ReviewProject.Rooms.MediaProbe.probe/1)
+
+        {worker, ref} =
+          spawn_monitor(fn -> send(parent, {:probed, room, a.id, probe.(a.path)}) end)
+
+        timer =
+          Process.send_after(self(), {:probe_timeout, room, a.id}, s.opts[:probe_timeout_ms])
+
+        {:noreply,
+         put(s, room, %{
+           a
+           | io: nil,
+             status: :validating,
+             probe: {worker, ref, timer},
+             pending: from
+         })}
+      else
+        {:reply, {:error, :insufficient_disk}, retire(s, room)}
+      end
     else
       {:reply, {:error, :size_mismatch}, retire(s, room)}
     end
@@ -422,12 +460,30 @@ defmodule ReviewProject.Rooms.Media do
     end
   end
 
-  defp free?(s, needed) do
+  defp space_for_append(s, needed) do
+    space = s.disk_space
+
+    # Account for every written byte between fresh filesystem observations.
+    # Bound both bytes and age so unrelated disk use is noticed during uploads.
+    if space == nil or s.clock.() - space.checked_at >= s.opts[:free_check_interval_ms] or
+         space.spent + needed > s.opts[:free_check_bytes] or
+         space.remaining < s.opts[:min_free_bytes] + needed do
+      refresh_disk_space(s, needed)
+    else
+      {true, s}
+    end
+  end
+
+  defp refresh_disk_space(s, needed) do
     check = Keyword.get(s.opts, :free_bytes, &__MODULE__.free_bytes/1)
 
     case check.(s.root) do
-      {:ok, bytes} when is_integer(bytes) -> bytes >= s.opts[:min_free_bytes] + needed
-      _ -> false
+      {:ok, bytes} when is_integer(bytes) and bytes >= 0 ->
+        space = %{remaining: bytes, spent: 0, checked_at: s.clock.()}
+        {bytes >= s.opts[:min_free_bytes] + needed, %{s | disk_space: space}}
+
+      _ ->
+        {false, %{s | disk_space: nil}}
     end
   end
 
