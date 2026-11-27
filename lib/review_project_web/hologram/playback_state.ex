@@ -19,6 +19,7 @@ defmodule ReviewProjectWeb.Hologram.PlaybackState do
       source_request: 0,
       serial: 0,
       pending: nil,
+      media_retries: 0,
       queued: nil,
       snapshot_request: nil,
       next_poll: 0,
@@ -41,6 +42,7 @@ defmodule ReviewProjectWeb.Hologram.PlaybackState do
       position: 0,
       duration: 0,
       state: -1,
+      playback_rate: 1.0,
       ready: false,
       blocked: false,
       error: "",
@@ -89,6 +91,8 @@ defmodule ReviewProjectWeb.Hologram.PlaybackState do
 
     %{
       source: state.source,
+      upload_source: state.desired && Map.get(state.desired, :video_source),
+      source_label: source_label(state),
       video_id: state.desired && state.desired.video_id,
       loading?: state.loading,
       playback_error: state.error,
@@ -119,6 +123,13 @@ defmodule ReviewProjectWeb.Hologram.PlaybackState do
       authority_revision: if(state.desired, do: state.desired.authority_revision, else: 0)
     }
   end
+
+  defp source_label(%{desired: %{video_source: %{kind: "upload", name: name}}}), do: name
+
+  defp source_label(%{desired: %{video_id: id}}) when is_binary(id),
+    do: "https://www.youtube.com/watch?v=" <> id
+
+  defp source_label(_state), do: ""
 
   def timestamp(seconds) do
     seconds = trunc(max(0, seconds))
@@ -276,6 +287,21 @@ defmodule ReviewProjectWeb.Hologram.PlaybackState do
 
   defp handle(state, :source, %{value: value}), do: {%{state | source: value, error: ""}, []}
 
+  defp handle(state, :select_upload, %{id: id}) do
+    if not solo?(state) and controller?(state) and state.pending == nil and not state.loading do
+      submit(%{state | source_request: state.source_request + 1}, %{
+        op: "video",
+        source: %{kind: "upload", id: id}
+      })
+    else
+      {state, []}
+    end
+  end
+
+  defp handle(state, :discard_upload, _params) do
+    if not solo?(state), do: submit(state, %{op: "discard_upload"}), else: {state, []}
+  end
+
   defp handle(state, :select, %{source: source}) do
     if controller?(state) and state.pending == nil and not state.loading do
       id = state.source_request + 1
@@ -424,14 +450,17 @@ defmodule ReviewProjectWeb.Hologram.PlaybackState do
             },
             else: state
 
-        {state, _} = accept(state, params.result)
+        {state, accepted?} = accept(state, params.result)
 
-        state =
-          if state.pending != nil and state.pending.resync,
-            do: %{state | pending: nil},
-            else: state
+        pending = state.pending
+        state = if pending != nil and pending.resync, do: %{state | pending: nil}, else: state
 
-        continue(state)
+        if accepted? and pending != nil and Map.get(pending, :media_retry, false) and
+             media_retry_current?(state.desired, pending) and controller?(state) do
+          submit(state, pending.command)
+        else
+          continue(%{state | media_retries: 0})
+        end
       else
         {%{
            state
@@ -449,8 +478,12 @@ defmodule ReviewProjectWeb.Hologram.PlaybackState do
     if state.pending != nil and state.pending.id == params.request do
       if params.status == "ok" do
         {state, _} = accept(state, params.result)
-        continue(%{state | pending: nil, error: ""})
+        continue(%{state | pending: nil, media_retries: 0, error: ""})
       else
+        busy? =
+          Map.get(params.result, :reason) == "media_busy" and
+            state.pending.command.op in ["video", "discard_upload"] and state.media_retries < 3
+
         state = %{
           state
           | pending: %{state.pending | resync: true},
@@ -458,14 +491,49 @@ defmodule ReviewProjectWeb.Hologram.PlaybackState do
             error: "Playback changed before that action completed. Refreshing the room state."
         }
 
-        snapshot(state)
+        if busy? do
+          pending =
+            Map.merge(state.pending, %{
+              media_retry: true,
+              guards: state.pending.guards
+            })
+
+          {%{
+             state
+             | pending: pending,
+               loaded_video: nil,
+               sample: local_sample(state),
+               media_retries: state.media_retries + 1
+           }, [{:clear_player}, {:retry_media, pending.id}]}
+        else
+          snapshot(state)
+        end
       end
     else
       {state, []}
     end
   end
 
+  defp handle(state, :retry_media, params) do
+    if state.pending != nil and state.pending.id == params.request and
+         Map.get(state.pending, :media_retry, false), do: snapshot(state), else: {state, []}
+  end
+
   defp handle(state, _, _), do: {state, []}
+
+  defp media_retry_current?(desired, pending) do
+    same_authority? =
+      desired.epoch == pending.guards.epoch and
+        desired.authority_revision == pending.guards.authority_revision
+
+    # Discard may itself have cleared the selected upload before returning busy.
+    # Permit exactly that one revision bump, never retry over a new selection.
+    own_clear? =
+      pending.command.op == "discard_upload" and desired.video_id == nil and
+        desired.revision == pending.guards.revision + 1
+
+    same_authority? and (desired.revision == pending.guards.revision or own_clear?)
+  end
 
   defp local_sample(state),
     do: Map.merge(empty_sample(), Map.take(state.sample, [:volume, :muted]))
@@ -547,6 +615,10 @@ defmodule ReviewProjectWeb.Hologram.PlaybackState do
       changed = old == nil or incoming.revision != old.revision
       authority_changed = old != nil and incoming.authority_revision != old.authority_revision
 
+      transport_changed =
+        old != nil and incoming.playing != old.playing and
+          get_in(incoming, [:video_source, :kind]) == "upload"
+
       force =
         changed and old != nil and incoming.video_id == old.video_id and
           abs(incoming.position - target(state, state.sample.now)) > 0.15
@@ -554,6 +626,8 @@ defmodule ReviewProjectWeb.Hologram.PlaybackState do
       next = %{
         state
         | desired: incoming,
+          last_transport: if(transport_changed, do: -10000, else: state.last_transport),
+          next_check: if(transport_changed, do: 0, else: state.next_check),
           force_seek: state.force_seek or force,
           pending: if(authority_changed, do: nil, else: state.pending),
           queued:
@@ -623,8 +697,14 @@ defmodule ReviewProjectWeb.Hologram.PlaybackState do
         payload =
           Map.merge(command, Map.take(state.desired, [:epoch, :revision, :authority_revision]))
 
-        {%{state | serial: id, pending: %{id: id, resync: false, command: command}},
-         [{:control, payload, id}]}
+        pending = %{
+          id: id,
+          resync: false,
+          command: command,
+          guards: Map.take(payload, [:epoch, :revision, :authority_revision])
+        }
+
+        {%{state | serial: id, pending: pending}, [{:control, payload, id}]}
       end
     else
       {state, []}
@@ -677,8 +757,14 @@ defmodule ReviewProjectWeb.Hologram.PlaybackState do
     now = state.sample.now
 
     cond do
+      state.pending != nil and state.media_retries > 0 ->
+        {state, []}
+
       not state.connected ->
         {state, []}
+
+      id == nil and state.loaded_video != nil ->
+        {%{state | loaded_video: nil, sample: local_sample(state)}, [{:clear_player}]}
 
       id == nil ->
         {state, []}
@@ -706,7 +792,8 @@ defmodule ReviewProjectWeb.Hologram.PlaybackState do
         state.sample.blocked or state.sample.error != "" or state.sample.live ->
         {state, []}
 
-      now < state.next_check ->
+      now < state.next_check and
+          not (state.force_seek and get_in(state.desired, [:video_source, :kind]) == "upload") ->
         {state, []}
 
       state.sample.video_id != id ->
@@ -725,11 +812,19 @@ defmodule ReviewProjectWeb.Hologram.PlaybackState do
     target = target(state, now)
     target = if duration > 0, do: min(target, duration), else: target
     tolerance = if playing, do: 0.2, else: 0.15
+    uploaded? = get_in(state.desired, [:video_source, :kind]) == "upload"
+    drift = target - state.sample.position
     buffering = state.sample.state == 3
     at_end = state.sample.state == 0 and duration > 0 and target >= duration - 0.35
 
+    # Repeated small HTML5 seeks can cost as much decode time as the drift they
+    # correct, leaving the player in a seek/wait loop during an active call.
+    # Correct modest playing drift with local speed; explicit/large jumps still
+    # seek, and YouTube keeps its existing reconciliation policy.
+    seek_tolerance = if uploaded? and playing and not state.force_seek, do: 0.5, else: tolerance
+
     seek =
-      not at_end and abs(target - state.sample.position) > tolerance and
+      not at_end and abs(drift) > seek_tolerance and
         (state.force_seek or (now - state.last_seek >= 1000 and not buffering))
 
     transport =
@@ -745,7 +840,20 @@ defmodule ReviewProjectWeb.Hologram.PlaybackState do
           nil
       end
 
-    effects = if seek, do: [{:native, "seek", target}], else: []
+    rate =
+      cond do
+        not playing or state.sample.state != 1 or seek or state.force_seek or at_end -> 1.0
+        drift > 0.1 -> 1.05
+        drift < -0.1 -> 0.95
+        true -> 1.0
+      end
+
+    effects =
+      if uploaded? and state.sample.playback_rate != rate,
+        do: [{:native, "rate", rate}],
+        else: []
+
+    effects = effects ++ if(seek, do: [{:native, "seek", target}], else: [])
     state = if seek, do: %{state | last_seek: now}, else: state
 
     {state, effects} =

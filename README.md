@@ -15,6 +15,40 @@ To start your Phoenix server:
 
 Now you can visit [`localhost:4000`](http://localhost:4000) from your browser.
 
+## Temporary uploaded video
+
+On the main workspace, **Upload video** explains that uploads belong to a room
+and offers **Create a room**. In a joined room, the current playback controller
+can use **Upload video** beside **Switch video**, to the right of the source field. Compatible MP4
+(H.264/AAC-LC or no audio) and native WebM (VP8/VP9 or AV1 Main 8-bit with Opus or no audio) use the
+same synchronized controls as YouTube.
+The per-file cap is **1 GiB (1,073,741,824 bytes)**. A validated new upload is selected automatically;
+the modal closes once the room accepts it, ready for review. **Use this video**
+remains available for an existing staged file or a selection retry. YouTube can
+continue while an upload is prepared.
+
+There is **one staged file total per room**, not a media library. Confirm
+**Discard and replace** before replacing it; the old upload cannot be recovered
+if replacement fails. Files disappear after five continuous minutes empty or one
+hour without video playback or deliberate user interaction, even during a
+conference. Cleanup does not end the call or delete chat. Restart/file loss
+requires re-upload.
+
+Uploaded-video rollout is owner-approved. Staging enables uploads on its next
+deployment; other release environments opt in with `UPLOADED_VIDEO_ENABLED=true`
+(unset or false disables uploads). Remaining browser/capacity checks are
+follow-up work, not deployment blockers. The global staged quota is also
+1 GiB, so a full-cap file occupies that entire quota. See [operations and verification
+boundaries](docs/uploaded-video-operations.md) for private-disk configuration,
+ffprobe requirements, auth/range routes, provisional global limits, and the
+500 MiB/1 GiB/2 GiB feasibility comparison. Four-browser/five-participant
+acceptance is not implied by automated unit-test passes. The reusable local-room
+check is `scripts/uploaded_video_browser_test.mjs`; setup, Chrome/Firefox MP4/WebM
+results, a five-person synthetic-call VP9 pass, AV1 long-file verification and the
+historical five-person AV1/H.264 active-call failures, playback corrections and
+subsequent passes are recorded in the operations guide. Historical
+seek measurements were superseded by a stricter new-timeline convergence check.
+
 ## Tidewave MCP (development only)
 
 The development server exposes Tidewave at `http://localhost:4000/tidewave/mcp`.
@@ -59,7 +93,7 @@ names and ordering, and the full conversation returns on reload/rejoin. Sending
 is disabled while disconnected, and an unsent draft is kept.
 Messages appear in one continuous scrollable conversation, without paging or a
 display limit. New arrivals preserve your position when you are reading above.
-Video playback remains local.
+Review-video playback follows the current controller; volume and mute remain local.
 
 Rooms initialize conference receivers as soon as you join, without requesting
 camera or microphone permission. **Turn on microphone** and **Turn on camera**

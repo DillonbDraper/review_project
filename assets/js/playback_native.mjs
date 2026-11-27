@@ -50,6 +50,7 @@ export function createPlaybackNative(env = globalThis) {
         position: finite(r.player.getCurrentTime(), 0),
         duration: finite(r.player.getDuration(), 0),
         state: finite(r.player.getPlayerState(), -1),
+        playback_rate: finite(r.player.getPlaybackRate?.(), 1),
         volume: finite(r.player.getVolume(), r.volume),
         muted: typeof muted === "boolean" ? muted : r.muted,
         video_id: actualId(r),
@@ -125,9 +126,80 @@ export function createPlaybackNative(env = globalThis) {
     }, 100);
     return generation;
   };
-  const load = (expected, videoId) => {
+  const load = (expected, videoId, source = null) => {
     const r = resource;
     if (!r || r.generation !== expected || !current(r)) return;
+    r.provider = source?.kind === "upload" ? "upload" : "youtube";
+    if (r.provider === "upload" || !r.loading || r.frame?.tagName === "VIDEO") r.loadVersion = (r.loadVersion || 0) + 1;
+    const version = r.loadVersion;
+    const validLoad = () => current(r) && r.loadVersion === version;
+    if (source?.kind === "upload") {
+      clearTimeout(r.timeout);
+      r.loading = false;
+      r.player?.destroy();
+      r.frame?.remove();
+      const video = env.document.createElement("video");
+      r.frame = video;
+      video.className = "youtube-player";
+      video.controls = true;
+      video.playsInline = true;
+      video.preload = "metadata";
+      video.src = source.url;
+      r.videoId = videoId;
+      r.active = true;
+      r.ready = false;
+      r.preparing = true;
+      r.blocked = false;
+      r.error = "";
+      const state = () => video.ended ? 0 : video.readyState < 3 && !video.paused ? 3 : video.paused ? 2 : 1;
+      r.player = {
+        getVideoUrl: () => `https://native.invalid/?v=${encodeURIComponent(videoId)}`,
+        getCurrentTime: () => video.currentTime,
+        getDuration: () => video.duration,
+        getPlayerState: state,
+        getPlaybackRate: () => video.playbackRate,
+        setPlaybackRate: value => { video.playbackRate = value; },
+        getVolume: () => video.volume * 100,
+        isMuted: () => video.muted,
+        setVolume: value => { video.volume = value / 100; },
+        mute: () => { video.muted = true; },
+        unMute: () => { video.muted = false; },
+        playVideo: () => {
+          const pending = video.play();
+          pending?.catch(() => { if (current(r) && r.frame === video) { r.blocked = true; sample(r); } });
+        },
+        pauseVideo: () => video.pause(),
+        seekTo: value => { video.currentTime = value; },
+        destroy: () => { video.pause(); video.removeAttribute("src"); video.load(); },
+      };
+      video.volume = r.volume / 100;
+      video.muted = r.muted;
+      for (const event of ["loadedmetadata", "canplay", "play", "pause", "seeking", "seeked", "waiting", "ended", "volumechange", "error"]) {
+        video.addEventListener(event, () => {
+          if (!current(r) || r.frame !== video) return;
+          r.ready = video.readyState >= 1;
+          r.preparing = !r.ready;
+          if (event === "error") r.error = "This video could not be played. Retry playback or choose another source.";
+          if (event === "play") r.blocked = false;
+          sample(r);
+        });
+      }
+      for (const event of ["pointerdown", "keydown"]) {
+        video.addEventListener(event, input => {
+          if (input.isTrusted && validLoad() && r.frame === video) dispatch("player_activity", { generation: r.generation });
+        });
+      }
+      r.host.replaceChildren(video);
+      return;
+    }
+    if (r.frame?.tagName === "VIDEO") {
+      r.player.destroy();
+      r.frame.remove();
+      r.player = null;
+      r.frame = null;
+      r.ready = false;
+      r.loading = false;
+    }
     r.videoId = videoId;
     r.active = true;
     r.error = "";
@@ -144,7 +216,7 @@ export function createPlaybackNative(env = globalThis) {
     void (async () => {
       try {
         const YT = await loadAPI();
-        if (!current(r)) return;
+        if (!validLoad() || r.provider !== "youtube") return;
         const frame = (r.frame = env.document.createElement("iframe"));
         const url = new URL(
           `https://www.youtube-nocookie.com/embed/${r.videoId}`,
@@ -166,7 +238,7 @@ export function createPlaybackNative(env = globalThis) {
         frame.allowFullscreen = true;
         r.host.replaceChildren(frame);
         r.timeout = setTimeout(() => {
-          if (current(r) && !r.ready) {
+          if (validLoad() && !r.ready) {
             r.error = "The player timed out. Retry playback.";
             sample(r);
           }
@@ -174,7 +246,7 @@ export function createPlaybackNative(env = globalThis) {
         r.player = new YT.Player(frame, {
           events: {
             onReady: () => {
-              if (!current(r)) return;
+              if (!validLoad()) return;
               clearTimeout(r.timeout);
               r.ready = true;
               r.player.setVolume(r.volume);
@@ -183,7 +255,7 @@ export function createPlaybackNative(env = globalThis) {
               sample(r);
             },
             onStateChange: () => {
-              if (current(r)) {
+              if (validLoad()) {
                 const state = r.player.getPlayerState();
                 if ([1, 5].includes(state) && actualId(r) === r.videoId)
                   r.preparing = false;
@@ -192,13 +264,13 @@ export function createPlaybackNative(env = globalThis) {
               }
             },
             onAutoplayBlocked: () => {
-              if (current(r)) {
+              if (validLoad()) {
                 r.blocked = true;
                 sample(r);
               }
             },
             onError: (event) => {
-              if (current(r)) {
+              if (validLoad()) {
                 r.error = playerError(event.data);
                 sample(r);
               }
@@ -206,7 +278,7 @@ export function createPlaybackNative(env = globalThis) {
           },
         });
       } catch (error) {
-        if (current(r)) {
+        if (validLoad()) {
           r.error = error.message;
           sample(r);
         }
@@ -226,7 +298,8 @@ export function createPlaybackNative(env = globalThis) {
     else if (operation === "seek") {
       r.seekCount++;
       r.player.seekTo(value, true);
-    } else if (operation === "volume") r.player.setVolume(value);
+    } else if (operation === "rate" && r.provider === "upload") r.player.setPlaybackRate(value);
+    else if (operation === "volume") r.player.setVolume(value);
     else if (operation === "mute") value ? r.player.mute() : r.player.unMute();
   };
   const mount = () => {
@@ -271,6 +344,14 @@ export function createPlaybackNative(env = globalThis) {
     load,
     command,
     suspend,
+    clear: () => {
+      if (!resource) return;
+      resource.loadVersion = (resource.loadVersion || 0) + 1;
+      clearTimeout(resource.timeout);
+      resource.player?.destroy();
+      resource.frame?.remove();
+      Object.assign(resource, { player: null, frame: null, ready: false, loading: false, videoId: "", active: false });
+    },
     now,
     read,
     stop: () => {

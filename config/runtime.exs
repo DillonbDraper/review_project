@@ -23,6 +23,18 @@ end
 config :review_project, ReviewProjectWeb.Endpoint,
   http: [port: String.to_integer(System.get_env("PORT", "4000"))]
 
+# Release rollout approved; UPLOADED_VIDEO_ENABLED controls deployment enablement.
+# Limits are deliberately not environment-overridable above the approved cap.
+if config_env() == :prod do
+  config :review_project, :uploaded_video,
+    enabled: System.get_env("UPLOADED_VIDEO_ENABLED") in ~w(true 1),
+    root: System.get_env("UPLOADED_VIDEO_ROOT", "/tmp/review-project-media"),
+    max_file_bytes: 1_073_741_824,
+    max_total_bytes: 1_073_741_824,
+    max_uploads: 1,
+    min_free_bytes: 1_073_741_824
+end
+
 # Shared by development and releases. Only the secret's file path is configured;
 # the secret itself is read server-side when an admitted member requests ICE.
 if path = System.get_env("CONFERENCE_ICE_CONFIG") do

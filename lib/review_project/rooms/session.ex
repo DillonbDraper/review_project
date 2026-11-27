@@ -6,7 +6,10 @@ defmodule ReviewProject.Rooms.Session do
   Only those processes may make requests.
   """
   use GenServer, restart: :transient
-  alias ReviewProject.Rooms.{Conference, ICE, Store, Timeline}
+  alias ReviewProject.Rooms.{Conference, ICE, Media, Store, Timeline}
+
+  def http_request(server, scope, identity, operation),
+    do: GenServer.call(server, {:http_request, scope, identity, operation})
 
   def start_link(opts) do
     name = Keyword.get(opts, :name, via(Keyword.fetch!(opts, :room_id)))
@@ -55,6 +58,9 @@ defmodule ReviewProject.Rooms.Session do
           roster_revision: 0,
           peer_generations: %{},
           timeline: Timeline.new(now),
+          media_server: Keyword.get(opts, :media_server, Media),
+          media_empty_since: now,
+          media_activity_at: now,
           clock: clock,
           wall_clock: wall_clock,
           maintenance_interval: Keyword.get(opts, :maintenance_interval, 250)
@@ -98,7 +104,7 @@ defmodule ReviewProject.Rooms.Session do
             }
 
             state = if seat.slot == 0, do: %{state | absent_since: nil}, else: state
-            state = maintain_state(state)
+            state = state |> touch_media() |> maintain_state()
             broadcast(state)
             {:ok, messages} = Store.history(state.room.id)
 
@@ -131,6 +137,22 @@ defmodule ReviewProject.Rooms.Session do
           else
             operate(operation, id, member, state)
           end
+      end
+    else
+      notify(state, :room_closed, %{reason: :closed})
+      {:stop, :normal, {:error, :room_closed}, state}
+    end
+  end
+
+  # HTTP requests carry the verified signed browser identity, never a client PID.
+  # Only a currently connected seat can stream or stage media.
+  def handle_call({:http_request, scope, identity, operation}, _from, state) do
+    state = maintain_state(state)
+
+    if Store.open?(state.room.id, state.wall_clock.()) do
+      case http_member(state, scope, identity) do
+        nil -> {:reply, {:error, :not_joined}, state}
+        {id, member} -> operate(operation, id, member, state)
       end
     else
       notify(state, :room_closed, %{reason: :closed})
@@ -211,7 +233,38 @@ defmodule ReviewProject.Rooms.Session do
       {:ok, message} ->
         payload = public_message(message)
         notify(state, :room_chat_message, payload)
-        {:reply, {:ok, payload}, state}
+        {:reply, {:ok, payload}, touch_media(state)}
+
+      {:error, reason} ->
+        {:reply, {:error, reason}, state}
+    end
+  end
+
+  defp operate(:begin_upload, id, member, state) do
+    case operate(:can_upload, id, member, state) do
+      {:reply, {:ok, token}, state} -> {:reply, {:ok, token}, touch_media(state)}
+      result -> result
+    end
+  end
+
+  defp operate(:can_upload, id, _member, state) do
+    result =
+      cond do
+        not media_enabled?() -> {:error, :uploads_disabled}
+        state.controller_id != id -> {:error, :not_controller}
+        true -> {:ok, %{epoch: state.epoch, authority_revision: state.authority_revision}}
+      end
+
+    {:reply, result, state}
+  end
+
+  defp operate(:media_access, _id, _member, state), do: {:reply, {:ok, %{}}, state}
+
+  defp operate(:activity, _id, member, state) do
+    case consume(member, :activity, 30, state.clock.()) do
+      {:ok, member} ->
+        state = %{state | members: Map.put(state.members, member.seat.id, member)}
+        {:reply, {:ok, %{}}, touch_media(state)}
 
       {:error, reason} ->
         {:reply, {:error, reason}, state}
@@ -219,23 +272,21 @@ defmodule ReviewProject.Rooms.Session do
   end
 
   defp operate({:control, command}, id, _member, state) when is_map(command) do
-    result =
-      cond do
-        state.controller_id != id -> {:error, :not_controller}
-        command["epoch"] != state.epoch -> {:error, :stale_epoch}
-        command["authority_revision"] != state.authority_revision -> {:error, :stale_authority}
-        command["revision"] != state.timeline.revision -> {:error, :stale_revision}
-        true -> Timeline.command(state.timeline, command, state.clock.())
+    with :ok <- authorize_control(state, id, command) do
+      case apply_control(state, command) do
+        {:ok, timeline} ->
+          state = touch_media(%{state | timeline: timeline})
+          broadcast(state)
+          {:reply, {:ok, snapshot(state)}, state}
+
+        {:error, reason, next} ->
+          {:reply, {:error, reason}, next}
+
+        {:error, reason} ->
+          {:reply, {:error, reason}, state}
       end
-
-    case result do
-      {:ok, timeline} ->
-        state = %{state | timeline: timeline}
-        broadcast(state)
-        {:reply, {:ok, snapshot(state)}, state}
-
-      {:error, reason} ->
-        {:reply, {:error, reason}, state}
+    else
+      {:error, reason} -> {:reply, {:error, reason}, state}
     end
   end
 
@@ -344,6 +395,7 @@ defmodule ReviewProject.Rooms.Session do
     do: {:reply, {:error, :invalid_operation}, state}
 
   defp maintain_state(state) do
+    state = maintain_media(state)
     now = state.clock.()
 
     expired =
@@ -406,7 +458,144 @@ defmodule ReviewProject.Rooms.Session do
       end
 
     if changed? or expired != [], do: broadcast(state)
+    maintain_media(state)
+  end
+
+  @impl true
+  def terminate(_reason, state) do
+    media_call(fn -> Media.discard(state.room.id, state.media_server) end)
+    :ok
+  end
+
+  defp authorize_control(state, id, command) do
+    cond do
+      state.controller_id != id -> {:error, :not_controller}
+      command["epoch"] != state.epoch -> {:error, :stale_epoch}
+      command["authority_revision"] != state.authority_revision -> {:error, :stale_authority}
+      command["revision"] != state.timeline.revision -> {:error, :stale_revision}
+      true -> :ok
+    end
+  end
+
+  defp apply_control(state, %{"op" => "video", "source" => %{"kind" => "upload", "id" => id}})
+       when is_binary(id) do
+    with true <- media_enabled?(),
+         {:ok, asset} <- media_call(fn -> Media.ready(state.room.id, id, state.media_server) end) do
+      source = %{
+        kind: "upload",
+        id: asset.id,
+        name: asset.name,
+        duration: asset.duration,
+        url: "/room-media/#{state.room.id}/#{asset.id}"
+      }
+
+      {:ok, Timeline.select_upload(state.timeline, source, state.clock.())}
+    else
+      false -> {:error, :uploads_disabled}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp apply_control(state, %{"op" => "discard_upload"}) do
+    next = clear_uploaded_source(state)
+
+    case media_call(fn -> Media.discard(state.room.id, state.media_server) end) do
+      :ok -> {:ok, next.timeline}
+      {:error, reason} -> {:error, reason, next}
+    end
+  end
+
+  defp apply_control(state, command),
+    do: Timeline.command(state.timeline, command, state.clock.())
+
+  defp clear_uploaded_source(%{timeline: %{video_source: %{kind: "upload"}}} = state) do
+    state = %{state | timeline: Timeline.clear(state.timeline, state.clock.())}
+    broadcast(state)
     state
+  end
+
+  defp clear_uploaded_source(state), do: state
+
+  defp touch_media(state), do: %{state | media_activity_at: state.clock.()}
+
+  defp maintain_media(state) do
+    now = state.clock.()
+    empty? = not Enum.any?(state.members, fn {_id, member} -> member.pid != nil end)
+    empty_since = if empty?, do: state.media_empty_since || now, else: nil
+    active? = Timeline.playing?(state.timeline, now)
+    state = %{state | media_empty_since: empty_since}
+    state = if active?, do: touch_media(state), else: state
+
+    # Known uploaded durations prevent an ended player claiming perpetual activity.
+    state =
+      if state.timeline.playing and not active? and state.timeline.video_id != nil do
+        timeline = Timeline.bump(state.timeline, now)
+        duration = state.timeline.video_source.duration
+        ended_at = Timeline.playback_end(state.timeline)
+
+        state = %{
+          state
+          | timeline: %{timeline | playing: false, position: duration},
+            media_activity_at: max(state.media_activity_at, ended_at)
+        }
+
+        broadcast(state)
+        state
+      else
+        state
+      end
+
+    empty_due? = is_integer(empty_since) and now - empty_since >= 300_000
+    idle_due? = not active? and now - state.media_activity_at >= 3_600_000
+
+    case media_call(fn -> Media.staged(state.room.id, state.media_server) end) do
+      nil ->
+        clear_uploaded_source(state)
+
+      {:error, _} ->
+        clear_uploaded_source(state)
+
+      _asset when empty_due? or idle_due? ->
+        state = clear_uploaded_source(state)
+        media_call(fn -> Media.discard(state.room.id, state.media_server) end)
+        state
+
+      _asset ->
+        validate_uploaded_source(state)
+    end
+  end
+
+  defp validate_uploaded_source(%{timeline: %{video_source: %{kind: "upload", id: id}}} = state) do
+    case media_call(fn -> Media.ready(state.room.id, id, state.media_server) end) do
+      {:ok, _asset} -> state
+      _ -> clear_uploaded_source(state)
+    end
+  end
+
+  defp validate_uploaded_source(state), do: state
+
+  defp http_member(state, scope, identity) do
+    digest =
+      if is_binary(identity) and byte_size(identity) >= 32,
+        do: :crypto.hash(:sha256, [state.room.id, ":", identity])
+
+    Enum.find(state.members, fn {_id, member} ->
+      member.pid != nil and
+        if member.seat.slot == 0 do
+          Store.owner_id(scope) == state.room.owner_id
+        else
+          digest != nil and member.seat.browser_identity_hash == digest
+        end
+    end)
+  end
+
+  defp media_enabled?,
+    do: Keyword.get(Application.get_env(:review_project, :uploaded_video, []), :enabled, false)
+
+  defp media_call(fun) do
+    fun.()
+  catch
+    :exit, _reason -> {:error, :media_unavailable}
   end
 
   defp member(seat, pid, ref, deadline),

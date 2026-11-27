@@ -34,12 +34,40 @@ defmodule ReviewProject.RuntimeConfigTest do
           "POOL_SIZE" => nil,
           "CONFERENCE_ICE_CONFIG" => nil,
           "GOOGLE_CLIENT_ID" => nil,
-          "TURN_SPIKE_CONFIG" => nil
+          "TURN_SPIKE_CONFIG" => nil,
+          "UPLOADED_VIDEO_ENABLED" => nil,
+          "UPLOADED_VIDEO_ROOT" => nil
         },
         overrides
       ),
       fn -> Config.Reader.read!("config/runtime.exs", env: env, target: :host) end
     )
+  end
+
+  test "production uploads are opt-in without raising the approved cap" do
+    uploads = config(:prod, %{})[:review_project][:uploaded_video]
+    refute uploads[:enabled]
+    assert uploads[:root] == "/tmp/review-project-media"
+    assert uploads[:max_file_bytes] == 1_073_741_824
+    assert uploads[:max_total_bytes] == 1_073_741_824
+    assert uploads[:max_uploads] == 1
+    assert uploads[:min_free_bytes] == 1_073_741_824
+
+    enabled =
+      config(:prod, %{
+        "UPLOADED_VIDEO_ENABLED" => "true",
+        "UPLOADED_VIDEO_ROOT" => "/tmp/private-upload-test"
+      })[:review_project][:uploaded_video]
+
+    assert enabled[:enabled]
+    assert enabled[:root] == "/tmp/private-upload-test"
+    assert enabled[:max_file_bytes] == 1_073_741_824
+
+    refute config(:prod, %{"UPLOADED_VIDEO_ENABLED" => "yes"})[:review_project][:uploaded_video][
+             :enabled
+           ]
+
+    assert config(:test, %{})[:review_project][:uploaded_video] == nil
   end
 
   test "production TLS verifies the database hostname with system roots" do
@@ -187,7 +215,7 @@ defmodule ReviewProject.RuntimeConfigTest do
     assert mailer[:adapter] == Swoosh.Adapters.Resend
     assert mailer[:api_key] == "test-resend-key"
     base = Config.Reader.read!("config/config.exs", env: :prod, target: :host)
-    assert base[:review_project][:mail_sender] == {"ReviewProject", "noreply@whatgrabsme.org"}
+    assert base[:review_project][:mail_sender] == {"Review Project", "noreply@whatgrabsme.org"}
     refute Keyword.has_key?(runtime[:review_project], :mail_sender)
 
     prod = Config.Reader.read!("config/prod.exs", env: :prod, target: :host)

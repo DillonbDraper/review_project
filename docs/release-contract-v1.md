@@ -13,10 +13,10 @@ provide historical context and do not override these decisions.
 | Area | Decision |
 | --- | --- |
 | Release | Free tier only. |
-| Video sources | YouTube only; support is required for launch. |
+| Video sources | YouTube plus temporary uploaded prerecorded MP4 and native WebM; uploaded-video rollout approved 2026-11-27, with remaining browser/capacity verification accepted as follow-up work. |
 | Participants | Five total per room, including the host. |
 | Session duration | No application-imposed time limit. |
-| Features | Synchronized YouTube playback, mesh voice/video conferencing, and chat. |
+| Features | Synchronized YouTube/uploaded-video playback, mesh voice/video conferencing, and chat. |
 | Recording and drawing | Neither included. No recording of any kind in the free tier. |
 | Access | Host signs in; guests join by invitation link without accounts and choose display names. |
 | Browsers | Current desktop Chrome, Edge, Firefox, and Safari. Mobile support is deferred. |
@@ -38,7 +38,7 @@ flow. These choices were selected by the project owner on 2026-11-21.
 1. An authenticated host creates a room and shares its invitation link.
 2. Up to four guests join without registering, bringing the room to a maximum of
    five participants including the host.
-3. The host selects a YouTube video. Play, pause, and seek actions synchronize
+3. The current playback controller selects a YouTube video or a validated temporary upload. Play, pause, and seek actions synchronize
    playback across participants. Participants can use chat and mesh voice/video
    conferencing during the session.
 4. If the host disconnects, a connected guest receives playback control so the
@@ -151,10 +151,68 @@ within five seconds once the transport and player are ready and local playback
 is enabled. Verification is still required; these decisions do not claim that
 any implementation currently meets these targets.
 
+## Temporary uploaded video
+
+The owner approved temporary app-server staging and authorized implementation on
+2026-11-27. These requirements supersede the earlier YouTube-only restriction;
+they are not a claim of browser, performance, or deployment verification.
+
+- Exactly one physical staged file per room, including receiving, validating,
+  ready, selected, and retired files whose readers still retain disk resources.
+- The current playback controller may upload and select, including the authorized
+  guest after host-absence handoff. Existing host reclaim/revision guards remain.
+- Allow files up to **1 GiB (1,073,741,824 bytes)**. The owner approved increasing
+  the original 500 MiB cap on 2026-11-27 after local full-file verification.
+  The global staged quota remains 1 GiB, with a separate 1 GiB free-disk reserve.
+  Provisioning remains separate from this file-limit decision; see the rollout
+  decision below.
+- Support browser-compatible MP4 H.264/yuv420p with AAC-LC or no audio. Include
+  native WebM VP8/VP9 and AV1 Main-profile 8-bit yuv420p with Opus or no audio.
+  The owner accepted AV1 for normal uploads on 2026-11-27 after reviewing local
+  verification. Reject HEVC and unverified formats, including AV1 MP4 and 10-bit
+  AV1; do not transcode. The known active-call synchronization failure and pending
+  Edge/Safari verification remain recorded follow-ups; accepting AV1 does not
+  establish universal browser compatibility or change synchronization targets.
+- In the selected-video header, put Switch video immediately right of the
+  current-source textbox, followed by Upload video. A successful, validated new
+  upload automatically selects the video and closes the upload modal once the
+  room accepts the selection, ready for review. Offer progress and cancel/retry;
+  retain Use this video for an already-staged file or a selection retry. These
+  flow and button-order changes were selected by the owner on 2026-11-27.
+- Uploaded-to-uploaded replacement requires explicit Discard and replace, stopping
+  the old source and releasing readers/file before accepting replacement bytes.
+  No rollback of the discarded file is promised; YouTube may continue during upload.
+- Delete staged media after **five continuous minutes empty OR one continuous hour
+  without video playback or user interaction, regardless of conferencing**.
+  Deliberate chat/device/control actions reset idle; continuing camera/microphone
+  streams, RTP/signaling, heartbeats, polls and background progress do not.
+- Cleanup removes media only, never the room, chat, or conferencing. There is no
+  occupied-session duration cap. Restart/deployment/file loss requires re-upload.
+- Delivery is private, same-origin, membership-authorized GET/HEAD/range streaming;
+  opaque IDs are not authorization. No permanent media library or P2P delivery.
+- Native playback uses the same controller/follower, local volume/mute,
+  blocked-player recovery, drift/spread and recovery targets as YouTube.
+
+See [the implementation plan](uploaded-video-plan.md) and
+[operations/evidence](uploaded-video-operations.md) for architecture and follow-up checks.
+
+On 2026-11-27, after the playback corrections and local five-person H.264/AV1
+active-call passes, the owner accepted the current evidence as sufficient for
+deployment. The remaining uploaded-video browser matrix, repeatability,
+long-file/device and hosted-capacity checks are follow-up work, not prerequisites
+for this rollout. This explicitly supersedes earlier upload-specific rollout
+gates. Synchronization/recovery targets, format policy and storage guardrails
+remain unchanged; historical failures and unverified behavior remain recorded.
+Staging enables uploads explicitly with `UPLOADED_VIDEO_ENABLED=true`, retaining
+the runtime disable switch. This decision does not claim universal browser
+compatibility or completed capacity verification.
+
 ## Explicitly deferred
 
 - Paid tiers, billing, and subscription purchase flows.
-- Uploaded or self-hosted videos and providers other than YouTube.
+- A permanently saved media library, object storage, persistent media volumes,
+  peer-to-peer file delivery, transcoding, and providers other than YouTube or
+  the approved temporary uploaded-video path.
 - Drawing and annotation features.
 - Session recording, recording exports, and screen-capture features.
 - Mobile browser support.
@@ -188,6 +246,9 @@ devices have separate guest identities. The owner remains the same authenticated
 account throughout handoff; up to four guests can occupy the room.
 
 ## Verification required before release
+
+The uploaded-video rollout exception above applies to this section: its remaining
+verification is follow-up work and does not block the approved deployment.
 
 The implementation must demonstrate the agreed experience in the supported
 desktop browsers, including synchronized YouTube playback, five-person mesh

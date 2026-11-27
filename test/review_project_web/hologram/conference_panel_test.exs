@@ -64,6 +64,17 @@ defmodule ReviewProjectWeb.Hologram.ConferencePanelTest do
     assert count(component, "#conference-tile-guest .conference-mic-status") == 1
   end
 
+  test "activity acknowledgements are inert and device controls remain local actions" do
+    component = init()
+    assert ConferencePanel.action(:activity_result, %{status: "ok"}, component) == component
+
+    for event <- [:toggle_microphone, :toggle_camera, :enable_audio, :retry_call] do
+      next = ConferencePanel.action(event, %{}, component)
+      refute next.state.conference.connected
+      assert next.state.conference.peers == %{}
+    end
+  end
+
   defp tile(id, name, local?),
     do: %{
       id: id,

@@ -6,7 +6,7 @@ defmodule ReviewProject.Accounts.UserNotifierTest do
   alias ReviewProject.Accounts.{User, UserNotifier}
 
   test "all account emails use the configured sender and preserve their contents" do
-    sender = {"ReviewProject", "noreply@whatgrabsme.org"}
+    sender = {"Review Project", "noreply@whatgrabsme.org"}
 
     user = %User{email: "recipient@example.org"}
     url = "https://example.org/account/token"
@@ -28,6 +28,6 @@ defmodule ReviewProject.Accounts.UserNotifierTest do
 
   test "local and test sender remains available without production configuration" do
     assert Application.fetch_env!(:review_project, :mail_sender) ==
-             {"ReviewProject", "noreply@whatgrabsme.org"}
+             {"Review Project", "noreply@whatgrabsme.org"}
   end
 end

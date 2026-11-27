@@ -4,6 +4,202 @@ defmodule ReviewProjectWeb.Hologram.VideoPanelTest do
   alias Hologram.Template.Renderer
   alias ReviewProjectWeb.Hologram.{PlaybackState, VideoPanel}
 
+  test "a completed upload selects automatically and closes only after room acceptance" do
+    opened = VideoPanel.action(:open_upload, %{}, room_video())
+    assert opened.state.upload_open
+
+    params = %{
+      generation: opened.state.upload_generation,
+      room_id: "room",
+      completed: true,
+      staged: %{id: "asset", name: "Clip", status: "ready"}
+    }
+
+    for stale <- [%{params | room_id: "old"}, %{params | generation: -1}] do
+      ignored = VideoPanel.action(:upload_status, stale, opened)
+      assert ignored.state.playback.pending == nil
+      assert ignored.state.upload_open
+    end
+
+    staged = VideoPanel.action(:upload_status, Map.delete(params, :completed), opened)
+    assert staged.state.playback.pending == nil
+    assert staged.state.upload_open
+
+    pending = VideoPanel.action(:upload_status, params, opened)
+    assert pending.state.playback.pending.command.source == %{kind: "upload", id: "asset"}
+    assert pending.state.upload_open
+    assert pending.state.video_id == opened.state.video_id
+
+    snapshot =
+      Map.merge(pending.state.playback.desired, %{
+        revision: 2,
+        video_id: "upload:asset",
+        video_source: %{kind: "upload", id: "asset", name: "Clip", duration: 60.0}
+      })
+
+    accepted =
+      VideoPanel.action(
+        :control_result,
+        %{
+          generation: pending.state.playback.generation,
+          request: pending.state.playback.pending.id,
+          status: "ok",
+          result: snapshot
+        },
+        pending
+      )
+
+    refute accepted.state.upload_open
+    assert accepted.state.video_id == "upload:asset"
+
+    reopened = VideoPanel.action(:open_upload, %{}, accepted)
+    refreshed = VideoPanel.action(:upload_status, Map.delete(params, :completed), reopened)
+    assert refreshed.state.upload_open
+    assert refreshed.state.playback.pending == nil
+
+    rejected =
+      VideoPanel.action(
+        :control_result,
+        %{
+          generation: pending.state.playback.generation,
+          request: pending.state.playback.pending.id,
+          status: "error",
+          result: %{reason: "stale_revision"}
+        },
+        pending
+      )
+
+    assert rejected.state.upload_open
+    assert rejected.state.staged_upload.id == "asset"
+    assert rejected.state.upload_message != ""
+    assert rejected.state.video_id == opened.state.video_id
+  end
+
+  test "upload callbacks require room and generation correlation and discard requires confirmation" do
+    component = VideoPanel.action(:open_upload, %{}, room_video())
+
+    params = %{
+      generation: component.state.upload_generation,
+      room_id: "room",
+      staged: %{id: "asset", name: "Clip", status: "ready"}
+    }
+
+    assert VideoPanel.action(:upload_status, %{params | room_id: "old"}, component).state.staged_upload ==
+             nil
+
+    assert VideoPanel.action(:upload_status, %{params | generation: -1}, component).state.staged_upload ==
+             nil
+
+    transferring =
+      VideoPanel.action(
+        :upload_status,
+        Map.merge(params, %{staged: nil, progress: 42}),
+        component
+      )
+
+    assert Enum.count(LazyHTML.query(document(transferring), "#upload-progress[value='42']")) == 1
+
+    ready = VideoPanel.action(:upload_status, params, transferring)
+    assert ready.state.staged_upload.id == "asset"
+    assert Enum.empty?(LazyHTML.query(document(ready), "#upload-progress"))
+    assert Enum.count(LazyHTML.query(document(ready), ".upload-dialog #upload-file-name")) == 1
+
+    assert Enum.count(
+             LazyHTML.query(document(ready), "#use-upload:not([disabled]), #discard-upload")
+           ) == 2
+
+    assert document(ready) |> LazyHTML.query("#upload-retention") |> LazyHTML.text() =~
+             "even during conferencing"
+
+    validating =
+      Component.put_state(ready, :staged_upload, %{params.staged | status: "validating"})
+
+    assert Enum.count(LazyHTML.query(document(validating), "#use-upload[disabled]")) == 1
+    opened = VideoPanel.action(:discard_upload, %{}, ready)
+    assert opened.state.playback.pending == nil
+
+    assert Enum.count(
+             LazyHTML.query(
+               document(opened),
+               "#discard-upload-confirmation #confirm-discard-upload"
+             )
+           ) == 1
+
+    kept = VideoPanel.action(:keep_upload, %{}, opened)
+    refute kept.state.discard_confirmation
+    assert kept.state.staged_upload == ready.state.staged_upload
+    discarded = VideoPanel.action(:confirm_discard_upload, %{}, opened)
+    assert discarded.state.playback.pending.command.op == "discard_upload"
+  end
+
+  test "workspace upload entry explains room staging before and after YouTube selection" do
+    workspace = VideoPanel.init(%{}, %Component{}, %Server{})
+
+    for component <- [workspace, select(workspace, "M7lc1UVf-VE")] do
+      doc = document(component)
+
+      assert Enum.count(
+               LazyHTML.query(
+                 doc,
+                 "#upload-video:not([disabled])[aria-controls='upload-video-dialog']"
+               )
+             ) == 1
+
+      assert LazyHTML.text(LazyHTML.query(doc, "#upload-room-required")) =~
+               "Create or join a room"
+
+      assert Enum.count(LazyHTML.query(doc, "#upload-create-room")) == 1
+      assert Enum.empty?(LazyHTML.query(doc, "#choose-upload, #cancel-upload, #use-upload"))
+      opened = VideoPanel.action(:open_upload, %{}, component)
+      assert opened.state.upload_generation == 0
+      assert opened.next_command == component.next_command
+      assert opened.state.playback == component.state.playback
+      create = VideoPanel.action(:create_upload_room, %{}, opened)
+      assert create.next_action.name == :open_create
+      assert create.next_action.target == "room-controls"
+    end
+  end
+
+  test "only a connected room controller can open the actual upload flow" do
+    controller = room_video()
+
+    assert Enum.count(
+             LazyHTML.query(document(controller), "#upload-video:not([disabled]), #choose-upload")
+           ) == 2
+
+    assert Enum.empty?(
+             LazyHTML.query(document(controller), "#upload-room-required, #upload-create-room")
+           )
+
+    opened =
+      VideoPanel.action(
+        :open_upload,
+        %{},
+        Component.put_state(controller, :discard_confirmation, true)
+      )
+
+    refute opened.state.discard_confirmation
+    assert VideoPanel.action(:create_upload_room, %{}, controller) == controller
+
+    unjoined = VideoPanel.init(%{room_id: "room"}, %Component{}, %Server{})
+
+    for component <- [unjoined, room_video("guest")] do
+      assert Enum.count(LazyHTML.query(document(component), "#upload-video[disabled]")) == 1
+
+      assert Enum.count(LazyHTML.query(document(component), "#upload-availability:not([hidden])")) ==
+               1
+
+      assert VideoPanel.action(:open_upload, %{}, component) == component
+      assert VideoPanel.action(:create_upload_room, %{}, component) == component
+    end
+
+    assert LazyHTML.text(LazyHTML.query(document(unjoined), "#upload-availability")) =~
+             "Join or reconnect"
+
+    assert LazyHTML.text(LazyHTML.query(document(room_video("guest")), "#upload-availability")) =~
+             "playback controller"
+  end
+
   test "popover positioning waits for native opening and preserves playback state" do
     component = VideoPanel.init(%{}, %Component{}, %Server{})
     positioned = VideoPanel.action(:playback_info_clicked, %{}, component)
@@ -55,7 +251,7 @@ defmodule ReviewProjectWeb.Hologram.VideoPanelTest do
     assert Enum.count(
              LazyHTML.query(
                document,
-               "#video-source + #load-video"
+               "#video-source ~ #load-video"
              )
            ) == 1
 
@@ -105,6 +301,14 @@ defmodule ReviewProjectWeb.Hologram.VideoPanelTest do
     assert Enum.count(LazyHTML.query(document, "#video-play-pause")) == 1
     assert Enum.count(LazyHTML.query(document, "#video-seek[aria-valuetext]")) == 1
     assert Enum.count(LazyHTML.query(document, ".video-header #open-switch-video")) == 1
+
+    assert Enum.count(
+             LazyHTML.query(
+               document,
+               "#current-video-source + #open-switch-video + #upload-video"
+             )
+           ) == 1
+
     assert Enum.empty?(LazyHTML.query(document, "#video-source-form"))
     refute component.state.loading?
   end

@@ -13,6 +13,24 @@ defmodule ReviewProjectWeb.Router do
     plug :fetch_current_scope_for_user
   end
 
+  # Cookie-authenticated room members include accountless guests. No login
+  # redirect or LiveView session: the coordinator authorizes the live seat.
+  # Header CSRF is retained for raw uploads and bounded JSON deletion.
+  pipeline :room_media do
+    plug :fetch_session
+    plug :protect_from_forgery
+    plug :put_secure_browser_headers
+    plug :fetch_current_scope_for_user
+  end
+
+  scope "/room-media", ReviewProjectWeb do
+    pipe_through :room_media
+    get "/:room_id", RoomMediaController, :index
+    post "/:room_id", RoomMediaController, :create
+    delete "/:room_id", RoomMediaController, :delete
+    get "/:room_id/:asset_id", RoomMediaController, :show
+  end
+
   pipeline :api do
     plug :accepts, ["json"]
   end

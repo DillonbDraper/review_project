@@ -1,7 +1,9 @@
 defmodule ReviewProjectWeb.Hologram.ConferencePanel do
   @moduledoc "Conference controls and client-side Elixir orchestration."
   use Hologram.Component
+  use Hologram.JS
   alias ReviewProjectWeb.Hologram.{ConferenceBrowser, ConferenceState}
+  js_import from: "../../../assets/js/room_browser.mjs", as: :RoomBrowser
 
   @impl Component
   def init(_props, component, _server) do
@@ -57,10 +59,15 @@ defmodule ReviewProjectWeb.Hologram.ConferencePanel do
 
   @impl Component
   def action(:toggle_microphone, _params, component),
-    do: transition(component, :toggle, %{kind: "audio"})
+    do: transition(activity(component), :toggle, %{kind: "audio"})
 
   def action(:toggle_camera, _params, component),
-    do: transition(component, :toggle, %{kind: "video"})
+    do: transition(activity(component), :toggle, %{kind: "video"})
+
+  def action(event, params, component) when event in [:enable_audio, :retry_call],
+    do: transition(activity(component), event, params)
+
+  def action(:activity_result, _params, component), do: component
 
   def action(:sync_tiles, params, component) do
     state = ConferenceBrowser.sync_tiles(component.state.conference)
@@ -81,6 +88,16 @@ defmodule ReviewProjectWeb.Hologram.ConferencePanel do
   end
 
   def action(event, params, component), do: transition(component, event, params)
+
+  # Only explicit control actions call this. Media/signaling/recovery callbacks
+  # must never extend staged-media idle retention.
+  defp activity(component) do
+    if component.state.conference.connected do
+      JS.call(:RoomBrowser, :push, ["activity", %{}, "conference-panel", "activity_result", %{}])
+    end
+
+    component
+  end
 
   defp transition(component, event, params) do
     {state, effects} = ConferenceState.event(component.state.conference, event, params)

@@ -69,10 +69,7 @@ defmodule ReviewProjectWeb.Endpoint do
   plug :hologram_websocket_before_telemetry
   plug Plug.Telemetry, event_prefix: [:phoenix, :endpoint]
 
-  plug Plug.Parsers,
-    parsers: [:urlencoded, :multipart, :json],
-    pass: ["*/*"],
-    json_decoder: Phoenix.json_library()
+  plug :parse_request_body
 
   plug Plug.MethodOverride
   plug Plug.Head
@@ -80,6 +77,28 @@ defmodule ReviewProjectWeb.Endpoint do
   plug :fetch_remembered_user_token
   plug Hologram.Router
   plug ReviewProjectWeb.Router
+
+  # Leave scoped media bodies unread until membership, CSRF and controller
+  # authorization. Multipart must never spool large files ahead of these checks.
+  defp parse_request_body(%{path_info: ["room-media" | _]} = conn, _opts) do
+    conn =
+      if conn.method == "HEAD",
+        do: Plug.Conn.put_private(conn, :room_media_head, true),
+        else: conn
+
+    %{conn | body_params: %{}}
+  end
+
+  defp parse_request_body(conn, _opts) do
+    Plug.Parsers.call(
+      conn,
+      Plug.Parsers.init(
+        parsers: [:urlencoded, :multipart, :json],
+        pass: ["*/*"],
+        json_decoder: Phoenix.json_library()
+      )
+    )
+  end
 
   defp hologram_websocket_before_telemetry(
          %Plug.Conn{request_path: "/hologram/websocket"} = conn,

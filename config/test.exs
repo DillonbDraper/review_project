@@ -1,5 +1,9 @@
 import Config
 
+# Never sweep a development server's media or another test VM's files.
+config :review_project, :uploaded_video,
+  root: Path.join(System.tmp_dir!(), "review-project-media-test-" <> System.pid())
+
 # Lifecycle tests start the worker explicitly with an injected clock and sandbox.
 config :review_project, :room_expiry_worker, enabled: false
 

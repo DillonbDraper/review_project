@@ -53,6 +53,9 @@ defmodule ReviewProjectWeb.RoomChannel do
               {:control, command}
             )
 
+          {"activity", params} when is_map(params) ->
+            Rooms.request(socket.assigns.current_scope, socket.assigns.room_id, :activity)
+
           {"leave", _} ->
             Rooms.request(socket.assigns.current_scope, socket.assigns.room_id, :leave)
 

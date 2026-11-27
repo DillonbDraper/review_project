@@ -60,6 +60,133 @@ defmodule ReviewProjectWeb.Hologram.PlaybackStateTest do
     PlaybackState.event(state, :sample, Map.put(observation, :generation, state.generation))
   end
 
+  test "media busy tears down locally, retries at most three times with fresh guards, and ignores stale callbacks" do
+    {state, _} = PlaybackState.event(joined(), :discard_upload, %{})
+
+    state =
+      Enum.reduce(1..3, state, fn attempt, state ->
+        request = state.pending.id
+
+        {busy, effects} =
+          PlaybackState.event(state, :control_result, %{
+            generation: 1,
+            request: request,
+            status: "error",
+            result: %{reason: "media_busy"}
+          })
+
+        assert {:clear_player} in effects
+        assert {:retry_media, request} in effects
+        assert busy.media_retries == attempt
+
+        {waiting, effects} =
+          PlaybackState.event(busy, :retry_media, %{generation: 1, request: request})
+
+        assert [{:snapshot, snapshot_request}] = effects
+
+        {retried, effects} =
+          PlaybackState.event(waiting, :snapshot_result, %{
+            generation: 1,
+            request: snapshot_request,
+            status: "ok",
+            sent_at_ms: 200,
+            received_at_ms: 300,
+            result: snapshot()
+          })
+
+        assert [{:control, payload, _}] = effects
+        assert payload.revision == 1
+        assert payload.op == "discard_upload"
+
+        assert PlaybackState.event(retried, :retry_media, %{generation: 1, request: request}) ==
+                 {retried, []}
+
+        retried
+      end)
+
+    {exhausted, effects} =
+      PlaybackState.event(state, :control_result, %{
+        generation: 1,
+        request: state.pending.id,
+        status: "error",
+        result: %{reason: "media_busy"}
+      })
+
+    refute Enum.any?(effects, &match?({:retry_media, _}, &1))
+    assert exhausted.media_retries == 3
+  end
+
+  test "discard retries after its own clear revision regardless of broadcast ordering" do
+    for broadcast_first? <- [false, true] do
+      {state, _} =
+        PlaybackState.event(
+          joined(%{video_id: "upload:one", video_source: %{kind: "upload", id: "one"}}),
+          :discard_upload,
+          %{}
+        )
+
+      cleared = snapshot(%{revision: 2, video_id: nil, video_source: nil})
+
+      {state, _} =
+        if broadcast_first?,
+          do:
+            PlaybackState.event(state, :room_snapshot, %{room_generation: 1, snapshot: cleared}),
+          else: {state, []}
+
+      {state, _} =
+        PlaybackState.event(state, :control_result, %{
+          generation: 1,
+          request: state.pending.id,
+          status: "error",
+          result: %{reason: "media_busy"}
+        })
+
+      {state, _} =
+        PlaybackState.event(state, :retry_media, %{generation: 1, request: state.pending.id})
+
+      {next, effects} =
+        PlaybackState.event(state, :snapshot_result, %{
+          generation: 1,
+          request: state.snapshot_request,
+          status: "ok",
+          sent_at_ms: 200,
+          received_at_ms: 300,
+          result: cleared
+        })
+
+      assert [{:control, %{op: "discard_upload", revision: 2}, _}] = effects
+      assert next.pending != nil
+    end
+  end
+
+  test "media retry is abandoned when a fresh snapshot changes revision" do
+    {state, _} = PlaybackState.event(joined(), :discard_upload, %{})
+
+    {state, _} =
+      PlaybackState.event(state, :control_result, %{
+        generation: 1,
+        request: state.pending.id,
+        status: "error",
+        result: %{reason: "media_busy"}
+      })
+
+    {state, _} =
+      PlaybackState.event(state, :retry_media, %{generation: 1, request: state.pending.id})
+
+    {next, effects} =
+      PlaybackState.event(state, :snapshot_result, %{
+        generation: 1,
+        request: state.snapshot_request,
+        status: "ok",
+        sent_at_ms: 200,
+        received_at_ms: 300,
+        result: snapshot(%{revision: 2})
+      })
+
+    assert next.pending == nil
+    refute Enum.any?(effects, &match?({:control, _, _}, &1))
+  end
+
   test "projection uses calibrated monotonic time and obsolete snapshots cannot rewind it" do
     state = joined(%{playing: true})
     assert PlaybackState.target(state, 2100) == 11.95
@@ -267,6 +394,152 @@ defmodule ReviewProjectWeb.Hologram.PlaybackStateTest do
     {_, effects} = sample(state, 2000, %{state: 3, position: 0})
     refute Enum.any?(effects, &match?({:native, "seek", _}, &1))
     refute Enum.any?(effects, &match?({:control, _, _}, &1))
+  end
+
+  test "uploaded playback corrects small drift with local speed changes instead of repeated seeks" do
+    source = %{kind: "upload", id: "one", name: "Clip", duration: 100.0}
+    state = joined(%{playing: true, video_id: "upload:one", video_source: source}, "guest")
+    {state, _} = PlaybackState.event(state, :enable, %{})
+
+    # The calibrated target is 11.85 at this sample. A loaded decoder can lag
+    # 250ms after each seek; seeking again would keep interrupting playback.
+    {state, effects} =
+      sample(state, 2000, %{state: 1, position: 11.6, video_id: "upload:one", focused: false})
+
+    assert {:native, "rate", 1.05} in effects
+    refute Enum.any?(effects, &match?({:native, "seek", _}, &1))
+    refute Enum.any?(effects, &match?({:control, _, _}, &1))
+
+    {state, effects} =
+      sample(state, 2600, %{
+        state: 1,
+        position: 12.45,
+        video_id: "upload:one",
+        focused: false,
+        playback_rate: 1.05
+      })
+
+    assert {:native, "rate", 1.0} in effects
+
+    {_, effects} =
+      sample(state, 3200, %{
+        state: 1,
+        position: 13.3,
+        video_id: "upload:one",
+        focused: false,
+        playback_rate: 1.0
+      })
+
+    assert {:native, "rate", 0.95} in effects
+    refute Enum.any?(effects, &match?({:native, "seek", _}, &1))
+  end
+
+  test "uploaded playback keeps hard seeks for large drift and resets speed when pausing" do
+    source = %{kind: "upload", id: "one", name: "Clip", duration: 100.0}
+    state = joined(%{playing: true, video_id: "upload:one", video_source: source}, "guest")
+    {state, _} = PlaybackState.event(state, :enable, %{})
+
+    {state, effects} =
+      sample(state, 2000, %{
+        state: 1,
+        position: 2,
+        video_id: "upload:one",
+        focused: false,
+        playback_rate: 1.05
+      })
+
+    assert {:native, "seek", 11.85} in effects
+    assert {:native, "rate", 1.0} in effects
+
+    {state, _} =
+      PlaybackState.event(state, :room_snapshot, %{
+        room_generation: 1,
+        snapshot:
+          snapshot(%{
+            revision: 2,
+            video_id: "upload:one",
+            video_source: source,
+            position: 11.85,
+            playing: false,
+            server_time_ms: 3000
+          })
+      })
+
+    {_, effects} =
+      sample(state, 3000, %{
+        state: 1,
+        position: 11.85,
+        video_id: "upload:one",
+        focused: false,
+        playback_rate: 1.05
+      })
+
+    assert {:native, "rate", 1.0} in effects
+  end
+
+  test "an explicit small uploaded-video seek still seeks immediately" do
+    source = %{kind: "upload", id: "one", name: "Clip", duration: 100.0}
+    state = joined(%{playing: true, video_id: "upload:one", video_source: source}, "guest")
+    {state, _} = PlaybackState.event(state, :enable, %{})
+
+    {state, _} =
+      sample(state, 2000, %{state: 1, position: 11.85, video_id: "upload:one", focused: false})
+
+    {state, _} =
+      PlaybackState.event(state, :room_snapshot, %{
+        room_generation: 1,
+        snapshot:
+          snapshot(%{
+            revision: 2,
+            video_id: "upload:one",
+            video_source: source,
+            position: 12.1,
+            playing: true,
+            server_time_ms: 2850
+          })
+      })
+
+    {_, effects} =
+      sample(state, 2100, %{state: 1, position: 11.95, video_id: "upload:one", focused: false})
+
+    assert Enum.any?(effects, fn
+             {:native, "seek", position} -> abs(position - 12.2) < 0.001
+             _ -> false
+           end)
+  end
+
+  test "an uploaded room resume does not wait behind the previous pause retry timer" do
+    source = %{kind: "upload", id: "one", name: "Clip", duration: 100.0}
+    state = joined(%{playing: false, video_id: "upload:one", video_source: source}, "guest")
+    {state, _} = PlaybackState.event(state, :enable, %{})
+
+    {state, effects} =
+      sample(state, 2000, %{state: 1, position: 10, video_id: "upload:one", focused: false})
+
+    assert {:native, "pause", nil} in effects
+    assert state.last_transport == 2000
+
+    {state, _} =
+      sample(state, 2100, %{state: 2, position: 10, video_id: "upload:one", focused: false})
+
+    {state, _} =
+      PlaybackState.event(state, :room_snapshot, %{
+        room_generation: 1,
+        snapshot:
+          snapshot(%{
+            revision: 2,
+            video_id: "upload:one",
+            video_source: source,
+            position: 10,
+            playing: true,
+            server_time_ms: 2950
+          })
+      })
+
+    {_, effects} =
+      sample(state, 2200, %{state: 2, position: 10, video_id: "upload:one", focused: false})
+
+    assert {:native, "play", nil} in effects
   end
 
   test "Replay acknowledgements cannot turn a stale ended sample into another room-wide stop" do

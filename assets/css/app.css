@@ -264,6 +264,41 @@
 .room-dialog .workspace-input { display: block; width: 100%; height: 44px; }
 .room-dialog .field-label { margin-top: 18px; }
 .room-dialog .field-hint { font-size: 11px; }
+.upload-dialog { width: min(560px, calc(100% - 32px)); padding: 32px; font-size: 13px; line-height: 1.7; }
+.upload-dialog .room-dialog-heading { margin-bottom: 20px; }
+.upload-dialog .dialog-close { font-size: 12px !important; padding: 7px 10px; }
+.upload-introduction { margin: 14px 0 24px; color: #657269; }
+.upload-details { margin: 0; padding: 16px 20px; border: 1px solid #e0e6d9; border-radius: 12px; background: #f3f6ed; }
+.upload-details > div { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 16px; }
+.upload-details > div + div { margin-top: 12px; }
+.upload-details dt { font-weight: 600; color: #53634f; }
+.upload-details dd { margin: 0; overflow-wrap: anywhere; }
+.upload-replacement-note { margin: 20px 0 28px; color: #657269; }
+.upload-retention { padding-top: 24px; border-top: 1px solid #e0e6d9; }
+.upload-dialog h3 { margin: 0 0 10px; font-size: 13px; font-weight: 600; }
+.upload-retention p { margin: 0; color: #657269; }
+.upload-retention p + p { margin-top: 12px; }
+.upload-selection { margin-top: 28px; }
+.upload-selection > p { margin: 0 0 20px; }
+.upload-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.upload-actions > button { min-height: 40px; white-space: normal; }
+.upload-file { margin-bottom: 22px; min-width: 0; }
+.upload-file-label { color: #657269; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
+.upload-file-name { margin: 6px 0 8px; font-weight: 600; overflow-wrap: anywhere; }
+.upload-file-state { display: inline-block; padding: 3px 9px; border-radius: 6px; background: #edf2e5; color: #456039; font-size: 11px; }
+.upload-progress { display: block; appearance: none; -webkit-appearance: none; width: 100%; height: 5px; margin: 0 0 14px; overflow: hidden; border: 0; border-radius: 999px; background: #e6ebdf; color: var(--workspace-green); }
+.upload-progress::-webkit-progress-bar { border-radius: 999px; background: #e6ebdf; }
+.upload-progress::-webkit-progress-value { border-radius: 999px; background: var(--workspace-green); }
+.upload-progress::-moz-progress-bar { border-radius: 999px; background: var(--workspace-green); }
+.upload-discard-confirmation { margin-top: 24px; padding: 20px; border: 1px solid #e5c9c1; border-radius: 12px; background: #fcf2ee; color: #783d30; }
+.upload-discard-confirmation p { margin: 0 0 18px; }
+.upload-dialog .upload-destructive { background: #934b3b; color: #fff; }
+.upload-dialog .upload-destructive:hover { background: #7d3b2e; }
+@media (max-width: 600px) {
+  .room-dialog.upload-dialog { padding: 28px; }
+  .upload-details > div { grid-template-columns: 1fr; gap: 4px; }
+  .upload-actions > button { flex: 1 1 160px; }
+}
 .room-submit { width: 100%; margin-top: 22px; }
 .invitation-link { font-size: 11px !important; }
 .room-sign-in p { font-size: 12px; line-height: 1.8; color: #758078; }

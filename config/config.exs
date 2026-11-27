@@ -24,6 +24,14 @@ config :review_project,
   ecto_repos: [ReviewProject.Repo],
   generators: [timestamp_type: :utc_datetime]
 
+# Temporary uploaded media. Release rollout approved; deployment opts in explicitly.
+config :review_project, :uploaded_video,
+  enabled: config_env() != :prod,
+  max_file_bytes: 1_073_741_824,
+  max_total_bytes: 1_073_741_824,
+  max_uploads: 1,
+  min_free_bytes: 1_073_741_824
+
 # Configure the endpoint
 config :review_project, ReviewProjectWeb.Endpoint,
   url: [host: "localhost"],

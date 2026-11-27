@@ -29,6 +29,7 @@ FROM debian:bookworm-slim AS run
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libstdc++6 libncurses6 openssl ca-certificates locales \
     libopus0 libsrtp2-1 libavcodec59 libavutil57 libswresample4 \
+    ffmpeg coreutils util-linux \
     && rm -rf /var/lib/apt/lists/* \
     && sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen && locale-gen
 # Hologram detects a release as dev unless its runtime environment is explicit.
