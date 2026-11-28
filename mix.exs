@@ -122,14 +122,33 @@ defmodule ReviewProject.MixProject do
       "ecto.reset": ["ecto.drop", "ecto.setup"],
       test: ["ecto.create --quiet", "ecto.migrate --quiet", "test"],
       "assets.setup": ["tailwind.install --if-missing", "esbuild.install --if-missing"],
-      "assets.build": ["compile", "tailwind review_project", "esbuild review_project"],
+      "assets.build": [
+        "compile",
+        "tailwind review_project",
+        "esbuild review_project",
+        "esbuild local_media",
+        "esbuild media_inspector",
+        &copy_media_wasm/1
+      ],
       "assets.deploy": [
         "tailwind review_project --minify",
         "esbuild review_project --minify",
+        "esbuild local_media --minify",
+        "esbuild media_inspector --minify",
+        &copy_media_wasm/1,
         "phx.digest"
       ],
       precommit: ["compile --warnings-as-errors", "deps.unlock --unused", "format", "test"]
     ]
+  end
+
+  defp copy_media_wasm(_args) do
+    File.mkdir_p!("priv/static/assets/mediainfo")
+
+    File.cp!(
+      "assets/vendor/mediainfo/MediaInfoModule.wasm",
+      "priv/static/assets/mediainfo/MediaInfoModule.wasm"
+    )
   end
 
   # Mix normally symlinks the app's priv directory back to the checkout. Hologram

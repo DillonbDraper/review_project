@@ -70,19 +70,6 @@ defmodule ReviewProject.Rooms do
     end
   end
 
-  @doc "Authorizes media HTTP operations using a verified session identity and a live seat."
-  def media_request(current_scope, room_id, browser_identity, operation) do
-    case Registry.lookup(ReviewProject.Rooms.Registry, room_id) do
-      [{pid, _}] ->
-        session_call(fn ->
-          Session.http_request(pid, current_scope, browser_identity, operation)
-        end)
-
-      [] ->
-        {:error, :not_joined}
-    end
-  end
-
   def send_message(current_scope, room_id, attrs, member \\ self()),
     do: request(current_scope, room_id, {:chat, attrs}, member)
 

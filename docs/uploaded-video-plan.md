@@ -1,5 +1,8 @@
 # Uploaded video implementation plan
 
+> Historical: the approved direct-file sharing replacement supersedes this upload path.
+> See [current operations](direct-file-sharing.md) and the [release contract](release-contract-v1.md).
+
 Status: uploaded-video rollout approved 2026-11-27 after local playback corrections
 and five-person H.264/AV1 passes. Remaining browser/capacity verification is
 follow-up work, not a deployment prerequisite; see the release contract.

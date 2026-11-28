@@ -24,14 +24,6 @@ config :review_project,
   ecto_repos: [ReviewProject.Repo],
   generators: [timestamp_type: :utc_datetime]
 
-# Temporary uploaded media. Release rollout approved; deployment opts in explicitly.
-config :review_project, :uploaded_video,
-  enabled: config_env() != :prod,
-  max_file_bytes: 1_073_741_824,
-  max_total_bytes: 1_073_741_824,
-  max_uploads: 1,
-  min_free_bytes: 1_073_741_824
-
 # Configure the endpoint
 config :review_project, ReviewProjectWeb.Endpoint,
   url: [host: "localhost"],
@@ -74,6 +66,16 @@ config :esbuild,
   path:
     System.get_env("MIX_ESBUILD_PATH") || System.get_env("ESBUILD_PATH") ||
       System.find_executable("esbuild"),
+  media_inspector: [
+    args:
+      ~w(js/media_inspector_worker.mjs --bundle --format=esm --target=es2022 --outfile=../priv/static/assets/js/media-inspector-worker.js),
+    cd: Path.expand("../assets", __DIR__)
+  ],
+  local_media: [
+    args:
+      ~w(js/local_media_sw.mjs --bundle --target=es2022 --outfile=../priv/static/local-media-sw.js),
+    cd: Path.expand("../assets", __DIR__)
+  ],
   review_project: [
     args:
       ~w(js/app.js --bundle --target=es2022 --outdir=../priv/static/assets/js --external:/fonts/* --external:/images/* --alias:@=.),

@@ -376,6 +376,7 @@ defmodule ReviewProjectWeb.Hologram.RoomPanelTest do
 
   defp snapshot do
     %{
+      room_id: "room",
       room_name: "Movie night",
       epoch: "epoch",
       roster_revision: 1,

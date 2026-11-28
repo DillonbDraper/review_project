@@ -14,13 +14,13 @@ defmodule ReviewProject.Rooms.Timeline do
   def bump(timeline, now),
     do: %{timeline | position: position(timeline, now), at: now, revision: timeline.revision + 1}
 
-  # The session supplies this descriptor only after checking private staged media.
-  def select_upload(timeline, source, now) do
+  # The session supplies a bounded descriptor; the browser owns the file.
+  def select_file(timeline, source, now) do
     next = bump(timeline, now)
 
     %{
       next
-      | video_id: "upload:" <> source.id,
+      | video_id: "local_file:" <> source.id,
         video_source: source,
         playing: false,
         position: 0.0

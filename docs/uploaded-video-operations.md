@@ -1,5 +1,8 @@
 # Temporary uploaded video: operations and evidence
 
+> Historical: the approved direct-file sharing replacement supersedes this upload path.
+> See [current operations](direct-file-sharing.md) and the [release contract](release-contract-v1.md).
+
 Status: owner-approved for rollout on 2026-11-27; this update does not deploy it. The
 [release contract](release-contract-v1.md) and [saved plan](uploaded-video-plan.md)
 define the accepted product policy. This document distinguishes local evidence

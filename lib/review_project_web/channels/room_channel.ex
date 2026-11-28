@@ -65,6 +65,23 @@ defmodule ReviewProjectWeb.RoomChannel do
           {"chat_history", params} when is_map(params) ->
             Rooms.request(socket.assigns.current_scope, socket.assigns.room_id, :history)
 
+          {event, params}
+          when event in ~w(file_offer file_available file_signal file_reset file_ice) and
+                 is_map(params) ->
+            operation = %{
+              "file_offer" => :file_offer,
+              "file_available" => :file_available,
+              "file_signal" => :file_signal,
+              "file_reset" => :file_reset,
+              "file_ice" => :file_ice
+            }
+
+            Rooms.request(
+              socket.assigns.current_scope,
+              socket.assigns.room_id,
+              {Map.fetch!(operation, event), params}
+            )
+
           {"conference_state", params} when is_map(params) ->
             Rooms.request(socket.assigns.current_scope, socket.assigns.room_id, {:media, params})
 
@@ -103,6 +120,16 @@ defmodule ReviewProjectWeb.RoomChannel do
 
   def handle_info({:room_chat_message, message}, socket) do
     push(socket, "chat_message", message)
+    {:noreply, socket}
+  end
+
+  def handle_info({:room_file_signal, signal}, socket) do
+    push(socket, "file_signal", signal)
+    {:noreply, socket}
+  end
+
+  def handle_info({:room_file_peer, peer}, socket) do
+    push(socket, "file_peer", peer)
     {:noreply, socket}
   end
 

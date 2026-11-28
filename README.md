@@ -15,39 +15,24 @@ To start your Phoenix server:
 
 Now you can visit [`localhost:4000`](http://localhost:4000) from your browser.
 
-## Temporary uploaded video
+## Direct local-file sharing
 
-On the main workspace, **Upload video** explains that uploads belong to a room
-and offers **Create a room**. In a joined room, the current playback controller
-can use **Upload video** beside **Switch video**, to the right of the source field. Compatible MP4
-(H.264/AAC-LC or no audio) and native WebM (VP8/VP9 or AV1 Main 8-bit with Opus or no audio) use the
-same synchronized controls as YouTube.
-The per-file cap is **1 GiB (1,073,741,824 bytes)**. A validated new upload is selected automatically;
-the modal closes once the room accepts it, ready for review. **Use this video**
-remains available for an existing staged file or a selection retry. YouTube can
-continue while an upload is prepared.
+Use **Share video** after **Switch video** to select an original MP4 or WebM file
+(up to 1 GiB). The current playback controller selects; its browser supplies the
+file directly to guests over dedicated WebRTC data channels. Cameras and
+microphones are optional. No recording bytes are uploaded to or stored by the app.
 
-There is **one staged file total per room**, not a media library. Confirm
-**Discard and replace** before replacing it; the old upload cannot be recovered
-if replacement fails. Files disappear after five continuous minutes empty or one
-hour without video playback or deliberate user interaction, even during a
-conference. Cleanup does not end the call or delete chat. Restart/file loss
-requires re-upload.
+Keep the source tab open and provide enough upstream bandwidth for each guest.
+Source departure pauses shared playback. Same-page reconnection can restore the
+file, then the controller presses Play. Reloading requires selecting the file
+again from zero. Session cleanup never deletes the original device file.
 
-Uploaded-video rollout is owner-approved. Staging enables uploads on its next
-deployment; other release environments opt in with `UPLOADED_VIDEO_ENABLED=true`
-(unset or false disables uploads). Remaining browser/capacity checks are
-follow-up work, not deployment blockers. The global staged quota is also
-1 GiB, so a full-cap file occupies that entire quota. See [operations and verification
-boundaries](docs/uploaded-video-operations.md) for private-disk configuration,
-ffprobe requirements, auth/range routes, provisional global limits, and the
-500 MiB/1 GiB/2 GiB feasibility comparison. Four-browser/five-participant
-acceptance is not implied by automated unit-test passes. The reusable local-room
-check is `scripts/uploaded_video_browser_test.mjs`; setup, Chrome/Firefox MP4/WebM
-results, a five-person synthetic-call VP9 pass, AV1 long-file verification and the
-historical five-person AV1/H.264 active-call failures, playback corrections and
-subsequent passes are recorded in the operations guide. Historical
-seek measurements were superseded by a stricter new-timeline convergence check.
+Build the service worker, metadata worker and pinned MediaInfo WASM with
+`mix assets.build` (`mix assets.deploy` for releases). Local development requires
+`HOLOGRAM_START=1 mix phx.server`; use localhost or HTTPS for service workers.
+See [operations and validation](docs/direct-file-sharing.md) for formats, browser
+checks, resource bounds and the reproducible room harness. Historical upload
+configuration and `/room-media/*` delivery have been retired.
 
 ## Tidewave MCP (development only)
 

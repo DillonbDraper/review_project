@@ -1,4 +1,5 @@
 // Native player handles browser events only. All playback policy is Elixir.
+import FileShare from "./file_share_native.mjs";
 import { loadAPI, playerError } from "./youtube_api.mjs";
 
 export function createPlaybackNative(env = globalThis) {
@@ -129,11 +130,11 @@ export function createPlaybackNative(env = globalThis) {
   const load = (expected, videoId, source = null) => {
     const r = resource;
     if (!r || r.generation !== expected || !current(r)) return;
-    r.provider = source?.kind === "upload" ? "upload" : "youtube";
-    if (r.provider === "upload" || !r.loading || r.frame?.tagName === "VIDEO") r.loadVersion = (r.loadVersion || 0) + 1;
+    r.provider = source?.kind === "local_file" ? "local_file" : "youtube";
+    if (r.provider === "local_file" || !r.loading || r.frame?.tagName === "VIDEO") r.loadVersion = (r.loadVersion || 0) + 1;
     const version = r.loadVersion;
     const validLoad = () => current(r) && r.loadVersion === version;
-    if (source?.kind === "upload") {
+    if (source?.kind === "local_file") {
       clearTimeout(r.timeout);
       r.loading = false;
       r.player?.destroy();
@@ -144,7 +145,14 @@ export function createPlaybackNative(env = globalThis) {
       video.controls = true;
       video.playsInline = true;
       video.preload = "metadata";
-      video.src = source.url;
+      let mediaURL;
+      // URL creation waits for a controlling worker and the current file generation.
+      void (env.ReviewFileShare || FileShare).url(source).then(url => {
+        if (validLoad() && r.frame === video) { mediaURL = url; video.src = url; video.load(); }
+        else (env.ReviewFileShare || FileShare).revokeURL?.(url);
+      }).catch(error => {
+        if (validLoad() && r.frame === video) { r.error = error.message; sample(r); }
+      });
       r.videoId = videoId;
       r.active = true;
       r.ready = false;
@@ -170,7 +178,10 @@ export function createPlaybackNative(env = globalThis) {
         },
         pauseVideo: () => video.pause(),
         seekTo: value => { video.currentTime = value; },
-        destroy: () => { video.pause(); video.removeAttribute("src"); video.load(); },
+        destroy: () => {
+          video.pause(); video.removeAttribute("src"); video.load();
+          (env.ReviewFileShare || FileShare).revokeURL?.(mediaURL); mediaURL = null;
+        },
       };
       video.volume = r.volume / 100;
       video.muted = r.muted;
@@ -298,7 +309,7 @@ export function createPlaybackNative(env = globalThis) {
     else if (operation === "seek") {
       r.seekCount++;
       r.player.seekTo(value, true);
-    } else if (operation === "rate" && r.provider === "upload") r.player.setPlaybackRate(value);
+    } else if (operation === "rate" && r.provider === "local_file") r.player.setPlaybackRate(value);
     else if (operation === "volume") r.player.setVolume(value);
     else if (operation === "mute") value ? r.player.mute() : r.player.unMute();
   };

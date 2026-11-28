@@ -4,11 +4,10 @@ defmodule ReviewProjectWeb.Hologram.VideoPanel do
   use Hologram.JS
 
   alias ReviewProject.VideoSource
-  alias ReviewProjectWeb.Hologram.PlaybackState
+  alias ReviewProjectWeb.Hologram.{PlaybackState, FileShareBrowser, FileShareState}
 
   prop :room_id, :string, default: ""
   js_import from: "../../../assets/js/playback_native.mjs", as: :Player
-  js_import from: "../../../assets/js/video_upload.mjs", as: :Upload
   js_import from: "../../../assets/js/room_browser.mjs", as: :Browser
   js_import from: "../../../assets/js/playback_info.js", as: :PlaybackInfo
 
@@ -18,16 +17,14 @@ defmodule ReviewProjectWeb.Hologram.VideoPanel do
 
     put_state(
       component,
-      Map.merge(PlaybackState.view(state), %{
-        playback: state,
-        switch_open: false,
-        upload_open: false,
-        staged_upload: nil,
-        upload_message: "",
-        upload_progress: 0,
-        upload_generation: 0,
-        discard_confirmation: false
-      })
+      Map.merge(
+        Map.merge(PlaybackState.view(state), FileShareState.view(FileShareState.new())),
+        %{
+          playback: state,
+          switch_open: false,
+          sharing: FileShareState.new()
+        }
+      )
     )
   end
 
@@ -40,19 +37,20 @@ defmodule ReviewProjectWeb.Hologram.VideoPanel do
           <div class="video-source-controls">
             <input id="current-video-source" class="workspace-input" type="text" value={@source_label} readonly aria-label="Current video URL" />
             <button id="open-switch-video" type="button" class="secondary-button" $click="open_switch" disabled={!@can_control || @loading? || @busy} aria-haspopup="dialog" aria-controls="switch-video-dialog">Switch video</button>
-            <button id="upload-video" type="button" class="secondary-button" $click="open_upload" disabled={!@solo && (!@can_control || !@connected)} aria-haspopup="dialog" aria-controls="upload-video-dialog" aria-describedby="upload-availability">Upload video</button>
+            <button id="share-video" type="button" class="secondary-button" $click="open_share" disabled={!@solo && (!@can_control || !@connected)} aria-haspopup="dialog" aria-controls="share-video-dialog" aria-describedby="share-availability">Share video</button>
           </div>
         {%else}
           <form id="video-source-form" $submit="load_video">
             <label for="video-source" class="sr-only">YouTube link</label>
             <div class="video-source-controls">
               <input id="video-source" name="source" type="text" value={@source} $input="update_source" placeholder="Paste Youtube link here to get started" maxlength="2048" required disabled={!@can_control || @loading? || @busy} aria-describedby="video-error" aria-invalid={if(@playback_error != "", do: "true", else: "false")} class="workspace-input" />
-              <button id="upload-video" type="button" class="secondary-button" $click="open_upload" disabled={!@solo && (!@can_control || !@connected)} aria-haspopup="dialog" aria-controls="upload-video-dialog" aria-describedby="upload-availability">Upload video</button>
+              <button id="share-video" type="button" class="secondary-button" $click="open_share" disabled={!@solo && (!@can_control || !@connected)} aria-haspopup="dialog" aria-controls="share-video-dialog" aria-describedby="share-availability">Share video</button>
               <button id="load-video" type="submit" class="primary-button" disabled={!@can_control || @loading? || @busy}>{%if @loading? || @busy}Loading…{%else}Load video{/if}</button>
             </div>
           </form>
         {/if}
-        <p id="upload-availability" class="field-hint" hidden={@solo || (@connected && @can_control)}>{%if !@connected}Join or reconnect to the room to upload a video.{%else}Only the current playback controller can upload videos.{/if}</p>
+        <p id="share-availability" class="field-hint" hidden={@solo || (@connected && @can_control)}>{%if !@connected}Join or reconnect to the room to share a video.{%else}Only the current playback controller can share videos.{/if}</p>
+        <p id="share-transfer-status" class="field-hint" role="status">{@share_metrics}</p>
         <p id="video-error" role="status" class="field-error" hidden={@switch_open}>{@playback_error}</p>
       </header>
       <div id="video-stage" class="video-stage">
@@ -97,7 +95,7 @@ defmodule ReviewProjectWeb.Hologram.VideoPanel do
         <p id="video-playback-status" class="field-hint" role="status">{@playback_status}</p>
         <p id="video-player-error" class="field-error" role="status">{@player_error}</p>
       </div>
-      <ReviewProjectWeb.Hologram.UploadDialog id="upload-dialog" solo={@solo} can_control={@can_control} busy={@busy} staged_upload={@staged_upload} upload_message={@upload_message} upload_progress={@upload_progress} discard_confirmation={@discard_confirmation} />
+      <ReviewProjectWeb.Hologram.ShareDialog id="share-dialog" solo={@solo} can_control={@can_control} share_message={@share_message} />
       <dialog id="switch-video-dialog" class="room-dialog" aria-labelledby="switch-video-heading" $key_down.escape.prevent_default="close_switch">
         <div class="room-dialog-heading">
           <span class="eyebrow">UP NEXT</span>
@@ -131,6 +129,8 @@ defmodule ReviewProjectWeb.Hologram.VideoPanel do
     state = component.state.playback
 
     if params.room_generation >= state.room_generation do
+      component = share_room_event(component, params)
+
       {event, data} =
         case params.kind do
           :joined ->
@@ -158,118 +158,78 @@ defmodule ReviewProjectWeb.Hologram.VideoPanel do
     end
   end
 
-  def action(:open_upload, _, component) do
-    state = component.state.playback
+  def action(:open_share, _, component),
+    do: share_transition(component, :open, %{solo: PlaybackState.solo?(component.state.playback)})
 
-    cond do
-      PlaybackState.solo?(state) ->
-        JS.call(:Browser, :dialog, ["upload-video-dialog", true])
-        put_state(component, :upload_open, true)
-
-      PlaybackState.controller?(state) ->
-        generation =
-          JS.call(:Upload, :open, [
-            %{
-              room_id: state.room_id,
-              connected: state.connected,
-              can_control: true,
-              guards: Map.take(state.desired, [:epoch, :authority_revision, :revision])
-            }
-          ])
-
-        JS.call(:Browser, :dialog, ["upload-video-dialog", true])
-
-        put_state(component, %{
-          upload_open: true,
-          upload_generation: generation || component.state.upload_generation + 1,
-          discard_confirmation: false
-        })
-
-      true ->
-        component
-    end
-  end
-
-  def action(:create_upload_room, _, component) do
+  def action(:create_share_room, _, component) do
     if PlaybackState.solo?(component.state.playback) do
       component
-      |> then(&action(:close_upload, %{}, &1))
+      |> then(&action(:close_share, %{}, &1))
       |> put_action(name: :open_create, target: "room-controls")
     else
       component
     end
   end
 
-  def action(:upload_status, params, component) do
-    if component.state.can_control and component.state.connected and
-         Map.get(params, :generation) == component.state.upload_generation and
-         Map.get(params, :room_id) == component.state.playback.room_id do
-      updated =
-        component
-        |> put_state(:upload_message, Map.get(params, :message, ""))
-        |> put_state(
-          :upload_progress,
-          Map.get(params, :progress, component.state.upload_progress)
-        )
-        |> put_state(:staged_upload, Map.get(params, :staged, component.state.staged_upload))
+  def action(:share_native, params, component) do
+    event =
+      case params.event do
+        "chosen" -> :chosen
+        "inspected" -> :inspected
+        _ -> :native
+      end
 
-      if Map.get(params, :completed, false) and updated.state.staged_upload != nil and
-           updated.state.staged_upload.status == "ready" do
-        action(:use_upload, %{}, updated)
-      else
-        updated
+    share_transition(component, event, params)
+  end
+
+  def action(:share_room_signal, params, component),
+    do: share_transition(component, :room_signal, params)
+
+  def action(:share_channel_result, params, component) do
+    sharing = component.state.sharing
+
+    if sharing.connected and params.generation == sharing.generation do
+      case params.kind do
+        "ice" ->
+          if params.request == sharing.ice_request do
+            {event, data} = FileShareBrowser.retain_ice(sharing, params)
+            share_transition(component, event, data)
+          else
+            component
+          end
+
+        kind ->
+          event =
+            case kind do
+              "offered" -> :offered
+              "restored" -> :restored
+              "reset_result" -> :reset_result
+              "signaled" -> :signaled
+            end
+
+          share_transition(component, event, params)
       end
     else
       component
     end
   end
 
-  def action(:choose_upload, _, component) do
+  def action(:file_connection_ready, %{source_id: id}, component) do
+    if get_in(component.state.playback.desired, [:video_source, :id]) == id and
+         component.state.playback.sample.error != "" do
+      action(:retry, %{}, component)
+    else
+      component
+    end
+  end
+
+  def action(:choose_share, _, component) do
     activity(component)
-    if component.state.can_control, do: JS.call(:Upload, :choose, [])
-    component
+    share_transition(component, :choose, %{})
   end
 
-  def action(:cancel_upload, _, component) do
-    generation = JS.call(:Upload, :cancel, [])
-    put_state(component, :upload_generation, generation || component.state.upload_generation + 1)
-  end
-
-  def action(:close_upload, _, component) do
-    JS.call(:Browser, :dialog, ["upload-video-dialog", false])
-    put_state(component, :upload_open, false)
-  end
-
-  def action(:use_upload, _, component) do
-    if component.state.staged_upload && component.state.staged_upload.status == "ready" do
-      updated = transition(component, :select_upload, %{id: component.state.staged_upload.id})
-
-      message =
-        if updated.state.playback.pending != component.state.playback.pending,
-          do: "Upload ready. Opening video…",
-          else: "Ready. Choose Use this video to switch playback."
-
-      put_state(updated, :upload_message, message)
-    else
-      component
-    end
-  end
-
-  def action(:discard_upload, _, component) do
-    if component.state.can_control,
-      do: put_state(component, :discard_confirmation, true),
-      else: component
-  end
-
-  def action(:keep_upload, _, component), do: put_state(component, :discard_confirmation, false)
-
-  def action(:confirm_discard_upload, _, component) do
-    if component.state.discard_confirmation and component.state.can_control do
-      component |> put_state(:discard_confirmation, false) |> transition(:discard_upload, %{})
-    else
-      component
-    end
-  end
+  def action(:cancel_share, _, component), do: share_transition(component, :cancel, %{})
+  def action(:close_share, _, component), do: share_transition(component, :close, %{})
 
   def action(:player_activity, params, component) do
     if Map.get(params, :generation) == component.state.playback.generation,
@@ -326,8 +286,6 @@ defmodule ReviewProjectWeb.Hologram.VideoPanel do
 
   def action(:snapshot_result, params, component),
     do: transition(component, :snapshot_result, params)
-
-  def action(:retry_media, params, component), do: transition(component, :retry_media, params)
 
   def action(:control_result, params, component),
     do: transition(component, :control_result, params)
@@ -386,6 +344,43 @@ defmodule ReviewProjectWeb.Hologram.VideoPanel do
     end
   end
 
+  defp share_room_event(component, params) do
+    sharing = component.state.sharing
+
+    case params.kind do
+      :joined ->
+        native = FileShareBrowser.start(sharing, params)
+        share_transition(component, :joined, Map.merge(params, native))
+
+      :roster ->
+        share_transition(component, :snapshot, %{snapshot: params.snapshot})
+
+      :stopped ->
+        generation = FileShareBrowser.stop(sharing, Map.get(params, :mode, "stop"))
+
+        share_transition(component, :stopped, %{
+          generation: generation,
+          room_generation: params.room_generation
+        })
+    end
+  end
+
+  defp share_transition(component, event, params) do
+    previous = component.state.sharing
+    {state, effects} = FileShareState.event(previous, event, params)
+    component = put_state(component, Map.put(FileShareState.view(state), :sharing, state))
+
+    if previous.open != state.open,
+      do: JS.call(:Browser, :dialog, ["share-video-dialog", state.open])
+
+    Enum.reduce(effects, component, fn effect, component ->
+      Enum.reduce(FileShareBrowser.perform(component.state.sharing, effect), component, fn
+        {:player_ready, data}, component -> action(:file_connection_ready, data, component)
+        {event, data}, component -> share_transition(component, event, data)
+      end)
+    end)
+  end
+
   defp activity(component) do
     state = component.state.playback
 
@@ -400,8 +395,6 @@ defmodule ReviewProjectWeb.Hologram.VideoPanel do
     if event in [
          :source,
          :select,
-         :select_upload,
-         :discard_upload,
          :toggle,
          :seek,
          :volume,
@@ -422,54 +415,7 @@ defmodule ReviewProjectWeb.Hologram.VideoPanel do
     video_changed? =
       state.desired != nil and state.desired.video_id != component.state.video_id
 
-    upload_selection? =
-      previous.pending != nil and previous.pending.command.op == "video" and
-        get_in(previous.pending.command, [:source, :kind]) == "upload"
-
-    upload_selected? =
-      upload_selection? and selection_finished? and
-        get_in(state.desired, [:video_source, :kind]) == "upload" and
-        get_in(state.desired, [:video_source, :id]) == previous.pending.command.source.id
-
-    if not state.connected or not PlaybackState.controller?(state) or
-         state.room_generation != previous.room_generation do
-      JS.call(:Upload, :reset, [])
-    end
-
-    if previous.pending != nil and previous.pending.command.op == "discard_upload" and
-         state.pending == nil do
-      JS.call(:Upload, :status, [])
-    end
-
     component = put_state(component, Map.put(PlaybackState.view(state), :playback, state))
-
-    component =
-      if upload_selection? and state.error != "" do
-        put_state(component, :upload_message, state.error)
-      else
-        component
-      end
-
-    component =
-      if component.state.upload_open and
-           (upload_selected? or
-              (not PlaybackState.solo?(state) and not PlaybackState.controller?(state))) do
-        action(:close_upload, %{}, component)
-      else
-        component
-      end
-
-    component =
-      if not state.connected or not PlaybackState.controller?(state) or
-           state.room_generation != previous.room_generation do
-        put_state(component, %{
-          staged_upload: nil,
-          upload_generation: component.state.upload_generation + 1,
-          discard_confirmation: false
-        })
-      else
-        component
-      end
 
     component =
       if component.state.switch_open and
@@ -489,14 +435,6 @@ defmodule ReviewProjectWeb.Hologram.VideoPanel do
         request: request,
         generation: state.generation
       })
-
-  defp perform(component, state, {:retry_media, request}) do
-    put_action(component,
-      name: :retry_media,
-      params: %{generation: state.generation, request: request},
-      delay: 250
-    )
-  end
 
   defp perform(component, _state, {:clear_player}) do
     JS.call(:Player, :clear, [])

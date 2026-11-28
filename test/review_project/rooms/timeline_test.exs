@@ -2,9 +2,9 @@ defmodule ReviewProject.Rooms.TimelineTest do
   use ExUnit.Case, async: true
   alias ReviewProject.Rooms.Timeline
 
-  test "uploaded playback end accounts for seek and elapsed time" do
-    source = %{kind: "upload", id: "asset", duration: 60.0}
-    timeline = Timeline.select_upload(Timeline.new(0), source, 0)
+  test "local_fileed playback end accounts for seek and elapsed time" do
+    source = %{kind: "local_file", id: "asset", duration: 60.0}
+    timeline = Timeline.select_file(Timeline.new(0), source, 0)
 
     assert {:ok, timeline} =
              Timeline.command(
@@ -21,16 +21,16 @@ defmodule ReviewProject.Rooms.TimelineTest do
     assert Timeline.playback_end(paused) == nil
   end
 
-  test "raw uploaded ids and malformed playback commands cannot select media" do
+  test "raw local_fileed ids and malformed playback commands cannot select media" do
     timeline = Timeline.new(0)
 
     assert {:error, :invalid_video} =
-             Timeline.command(timeline, %{"op" => "video", "video_id" => "upload:asset"}, 0)
+             Timeline.command(timeline, %{"op" => "video", "video_id" => "local_file:asset"}, 0)
 
     assert {:error, :no_video} =
              Timeline.command(
                timeline,
-               %{"op" => "video", "source" => %{"kind" => "upload", "id" => "asset"}},
+               %{"op" => "video", "source" => %{"kind" => "local_file", "id" => "asset"}},
                0
              )
 

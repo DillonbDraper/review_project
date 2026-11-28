@@ -69,6 +69,7 @@ defmodule ReviewProjectWeb.Endpoint do
   plug :hologram_websocket_before_telemetry
   plug Plug.Telemetry, event_prefix: [:phoenix, :endpoint]
 
+  plug :reject_retired_media
   plug :parse_request_body
 
   plug Plug.MethodOverride
@@ -78,16 +79,17 @@ defmodule ReviewProjectWeb.Endpoint do
   plug Hologram.Router
   plug ReviewProjectWeb.Router
 
-  # Leave scoped media bodies unread until membership, CSRF and controller
-  # authorization. Multipart must never spool large files ahead of these checks.
-  defp parse_request_body(%{path_info: ["room-media" | _]} = conn, _opts) do
-    conn =
-      if conn.method == "HEAD",
-        do: Plug.Conn.put_private(conn, :room_media_head, true),
-        else: conn
-
-    %{conn | body_params: %{}}
+  # Reject old uploads before Plug.Parsers can read or spool any body. The local
+  # prefix is served exclusively by the tab's worker, never by this application.
+  defp reject_retired_media(%{path_info: [prefix | _]} = conn, _opts)
+       when prefix in ["room-media", "__local_media"] do
+    conn
+    |> Plug.Conn.put_resp_header("cache-control", "no-store")
+    |> Plug.Conn.send_resp(410, "Server media delivery has been retired")
+    |> Plug.Conn.halt()
   end
+
+  defp reject_retired_media(conn, _opts), do: conn
 
   defp parse_request_body(conn, _opts) do
     Plug.Parsers.call(

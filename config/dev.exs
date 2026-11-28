@@ -27,6 +27,8 @@ config :review_project, ReviewProjectWeb.Endpoint,
   secret_key_base: "ahXCvzxQwZtyjznjvAVQYO/whu8mxYmf62J82wq+lIRq4TkI4kDxhCUh8SfP/Y+4",
   watchers: [
     esbuild: {Esbuild, :install_and_run, [:review_project, ~w(--sourcemap=inline --watch)]},
+    media_inspector: {Esbuild, :install_and_run, [:media_inspector, ~w(--watch)]},
+    local_media: {Esbuild, :install_and_run, [:local_media, ~w(--watch)]},
     tailwind: {Tailwind, :install_and_run, [:review_project, ~w(--watch)]}
   ]
 

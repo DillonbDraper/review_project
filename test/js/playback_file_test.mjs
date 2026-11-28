@@ -18,7 +18,7 @@ function nativeFixture(t) {
     getElementById: () => host, createElement: () => { const v = new Video(); videos.push(v); return v; },
     addEventListener(name, callback) { documentEvents[name] = callback; }, documentElement: {}, hidden: false,
   };
-  const bridge = createPlaybackNative({ document,
+  const bridge = createPlaybackNative({ document, ReviewFileShare: {url: async source => source.url},
     performance: { now: () => 100 }, MutationObserver: class { observe() {} },
     requestAnimationFrame(callback) { callback(); },
     addEventListener(name, callback) { windowEvents[name] = callback; }, queueMicrotask() {},
@@ -27,49 +27,54 @@ function nativeFixture(t) {
   return { bridge, videos, events, host, document, windowEvents, documentEvents };
 }
 
-test("native upload readiness, controls, blocked play, stale events and teardown", async t => {
+test("native local_file readiness, controls, blocked play, stale events and teardown", async t => {
   const { bridge, videos, events } = nativeFixture(t);
   const generation = bridge.start(true, 65, true);
-  bridge.load(generation, "upload:one", { kind: "upload", url: "/room-media/r/one" });
-  const v = videos[0]; assert.equal(v.src, "/room-media/r/one");
+  bridge.load(generation, "local_file:one", { kind: "local_file", url: "/__local_media/r/one" });
+  await Promise.resolve();
+  const v = videos[0]; assert.equal(v.src, "/__local_media/r/one");
   assert.equal(bridge.read().ready, false); assert.equal(v.volume, .65); assert.equal(v.muted, true);
   v.readyState = 1; v.fire("loadedmetadata"); assert.equal(bridge.read().ready, true);
   assert.equal(events.some(([action]) => action === "player_activity"), false);
   v.fire("pointerdown"); assert.equal(events.some(([action]) => action === "player_activity"), false);
   v.fire("pointerdown", { isTrusted: true }); assert.equal(events.at(-1)[0], "player_activity");
   assert.equal(events.at(-1)[2].generation, generation);
-  assert.equal(bridge.read().video_id, "upload:one"); assert.equal(bridge.read().duration, 30);
+  assert.equal(bridge.read().video_id, "local_file:one"); assert.equal(bridge.read().duration, 30);
   bridge.command(generation, "seek", 12); assert.equal(v.currentTime, 12);
   bridge.command(generation, "volume", 25); assert.equal(v.volume, .25);
   bridge.command(generation, "play"); await Promise.resolve(); assert.equal(bridge.read().blocked, true);
   v.fire("error"); assert.match(bridge.read().error, /could not be played/);
-  bridge.load(generation, "upload:two", { kind: "upload", url: "/room-media/r/two" });
+  bridge.load(generation, "local_file:two", { kind: "local_file", url: "/__local_media/r/two" });
+  await Promise.resolve();
   assert.equal(v.released, true); assert.equal(v.src, undefined);
   const count = events.length; v.fire("error"); assert.equal(events.length, count);
   bridge.clear(); assert.equal(videos[1].released, true); assert.equal(videos[1].removed, true);
   assert.equal(bridge.read().ready, false);
 });
 
-test("uploaded playback exposes local correction speed and resets it on source replacement", t => {
+test("local file playback exposes local correction speed and resets it on source replacement", async t => {
   const { bridge, videos } = nativeFixture(t);
   const generation = bridge.start(true);
-  bridge.load(generation, "upload:one", { kind: "upload", url: "/room-media/r/one" });
+  bridge.load(generation, "local_file:one", { kind: "local_file", url: "/__local_media/r/one" });
+  await Promise.resolve();
   videos[0].readyState = 3; videos[0].fire("canplay");
   bridge.command(generation, "rate", 1.05);
   assert.equal(videos[0].playbackRate, 1.05);
   assert.equal(bridge.read().playback_rate, 1.05);
   bridge.command(generation, "rate", 0.95);
   assert.equal(bridge.read().playback_rate, 0.95);
-  bridge.load(generation, "upload:two", { kind: "upload", url: "/room-media/r/two" });
+  bridge.load(generation, "local_file:two", { kind: "local_file", url: "/__local_media/r/two" });
+  await Promise.resolve();
   videos[1].readyState = 3; videos[1].fire("canplay");
   assert.equal(videos[1].playbackRate, 1);
   assert.equal(bridge.read().playback_rate, 1);
 });
 
-test("suspended native upload ignores stale events, commands and delayed play rejection", async t => {
+test("suspended native local_file ignores stale events, commands and delayed play rejection", async t => {
   const { bridge, videos, events } = nativeFixture(t);
   const generation = bridge.start(true);
-  bridge.load(generation, "upload:one", { kind: "upload", url: "/room-media/r/one" });
+  bridge.load(generation, "local_file:one", { kind: "local_file", url: "/__local_media/r/one" });
+  await Promise.resolve();
   const old = videos[0];
   old.readyState = 3;
   old.fire("canplay");
@@ -89,7 +94,8 @@ test("suspended native upload ignores stale events, commands and delayed play re
   assert.ok(next > generation);
   assert.equal(old.released, true);
   assert.equal(old.src, undefined);
-  bridge.load(next, "upload:one", { kind: "upload", url: "/room-media/r/one" });
+  bridge.load(next, "local_file:one", { kind: "local_file", url: "/__local_media/r/one" });
+  await Promise.resolve();
   const current = videos[1];
   current.readyState = 3;
   current.fire("canplay");
@@ -106,10 +112,11 @@ test("suspended native upload ignores stale events, commands and delayed play re
   assert.equal(current.muted, true);
 });
 
-test("pagehide releases native source and persisted pageshow requests a fresh mount", t => {
+test("pagehide releases native source and persisted pageshow requests a fresh mount", async t => {
   const { bridge, videos, events, host, document, windowEvents, documentEvents } = nativeFixture(t);
   const generation = bridge.start(true);
-  bridge.load(generation, "upload:one", { kind: "upload", url: "/room-media/r/one" });
+  bridge.load(generation, "local_file:one", { kind: "local_file", url: "/__local_media/r/one" });
+  await Promise.resolve();
   const video = videos[0];
   video.readyState = 3;
   video.fire("canplay");
@@ -137,7 +144,8 @@ test("pagehide releases native source and persisted pageshow requests a fresh mo
   assert.equal(bridge.read(), null, "restoration must not resurrect the old native player");
   const next = bridge.start(true);
   assert.ok(next > generation);
-  bridge.load(next, "upload:one", { kind: "upload", url: "/room-media/r/one" });
+  bridge.load(next, "local_file:one", { kind: "local_file", url: "/__local_media/r/one" });
+  await Promise.resolve();
   assert.equal(videos.length, 2);
   assert.equal(bridge.read().generation, next);
 });

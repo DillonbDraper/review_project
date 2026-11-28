@@ -350,7 +350,9 @@ defmodule ReviewProjectWeb.Hologram.RoomPanel do
                     "room_restart",
                     "chat_message",
                     "conference_signal",
-                    "conference_peer"
+                    "conference_peer",
+                    "file_signal",
+                    "file_peer"
                   ]
                 }
               ])
@@ -633,6 +635,22 @@ defmodule ReviewProjectWeb.Hologram.RoomPanel do
       else: component
   end
 
+  defp transport(event, payload, component) when event in ["file_signal", "file_peer"] do
+    if component.state.joined do
+      put_action(component,
+        name: :share_room_signal,
+        target: "video-panel",
+        params: %{
+          room_generation: component.state.generation,
+          kind: if(event == "file_signal", do: "signal", else: "peer_reset"),
+          payload: payload
+        }
+      )
+    else
+      component
+    end
+  end
+
   defp transport("room_ended", %{reason: "left"}, component), do: leave_completed(component)
   defp transport("room_ended", error, component), do: ended(component, error)
   defp transport("refused", error, component), do: refused(component, error)
@@ -736,7 +754,7 @@ defmodule ReviewProjectWeb.Hologram.RoomPanel do
       if event in [:joined, :roster, :stopped] do
         playback_params =
           params
-          |> Map.take([:snapshot, :self_id, :mode])
+          |> Map.take([:snapshot, :self_id, :connection_generation, :mode])
           |> Map.merge(%{
             kind: event,
             room_generation: component.state.generation,

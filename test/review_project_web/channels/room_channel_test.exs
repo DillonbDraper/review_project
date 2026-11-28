@@ -87,14 +87,15 @@ defmodule ReviewProjectWeb.RoomChannelTest do
     assert_reply ref, :error, %{reason: "session_expired"}
   end
 
-  test "upload discard uses guarded control and activity remains a separate bounded event", ctx do
+  test "retired upload operations reject control and activity remains a separate bounded event",
+       ctx do
     {:ok, %{snapshot: snapshot}, host} = join_room(ctx, ctx.scope)
     {:ok, _, guest} = join_room(ctx)
     guards = Map.take(snapshot, [:epoch, :revision, :authority_revision])
     ref = push(guest, "control", Map.put(guards, :op, "discard_upload"))
     assert_reply ref, :error, %{reason: "not_controller"}
     ref = push(host, "control", Map.put(guards, :op, "discard_upload"))
-    assert_reply ref, :ok, %{video_id: nil}
+    assert_reply ref, :error, %{reason: "no_video"}
 
     for _ <- 1..30 do
       ref = push(guest, "activity", %{})

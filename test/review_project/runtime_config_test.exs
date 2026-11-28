@@ -44,30 +44,9 @@ defmodule ReviewProject.RuntimeConfigTest do
     )
   end
 
-  test "production uploads are opt-in without raising the approved cap" do
-    uploads = config(:prod, %{})[:review_project][:uploaded_video]
-    refute uploads[:enabled]
-    assert uploads[:root] == "/tmp/review-project-media"
-    assert uploads[:max_file_bytes] == 1_073_741_824
-    assert uploads[:max_total_bytes] == 1_073_741_824
-    assert uploads[:max_uploads] == 1
-    assert uploads[:min_free_bytes] == 1_073_741_824
-
-    enabled =
-      config(:prod, %{
-        "UPLOADED_VIDEO_ENABLED" => "true",
-        "UPLOADED_VIDEO_ROOT" => "/tmp/private-upload-test"
-      })[:review_project][:uploaded_video]
-
-    assert enabled[:enabled]
-    assert enabled[:root] == "/tmp/private-upload-test"
-    assert enabled[:max_file_bytes] == 1_073_741_824
-
-    refute config(:prod, %{"UPLOADED_VIDEO_ENABLED" => "yes"})[:review_project][:uploaded_video][
-             :enabled
-           ]
-
-    assert config(:test, %{})[:review_project][:uploaded_video] == nil
+  test "retired upload configuration is absent even with legacy environment variables" do
+    assert config(:prod, %{"UPLOADED_VIDEO_ENABLED" => "true"})[:review_project][:uploaded_video] ==
+             nil
   end
 
   test "production TLS verifies the database hostname with system roots" do

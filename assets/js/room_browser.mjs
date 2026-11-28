@@ -1,6 +1,7 @@
 // Native resources only. Hologram owns room/chat state and all recovery policy.
 import {Socket} from "../../deps/phoenix/priv/static/phoenix.mjs";
 import ConferenceNative from "./conference_native.mjs";
+import FileShare from "./file_share_native.mjs";
 import PlaybackNative from "./playback_native.mjs";
 
 function browser() {
@@ -17,6 +18,7 @@ function browser() {
     try { sessionStorage.setItem(`review-room:${id}`, JSON.stringify(next)); } catch {}
   };
   const disconnect = () => {
+    FileShare.suspend();
     ConferenceNative.invalidate();
     PlaybackNative.suspend();
     const prior = transport;
@@ -28,6 +30,7 @@ function browser() {
     const next = document.getElementById("room-panel");
     if (next === host) return;
     disconnect();
+    FileShare.release();
     host = next;
     if (host) {
       const mounted = host;
@@ -98,6 +101,8 @@ function browser() {
           // Release devices before Hologram processes the transport event.
           // Recovery decisions and component-to-component routing live in Elixir.
           if (type === "lost" || type === "room_ended" || type === "room_restart") { ConferenceNative.invalidate(); PlaybackNative.suspend(); }
+          if (type === "lost") FileShare.suspend();
+          if (["room_ended", "room_restart", "refused"].includes(type)) FileShare.release();
           dispatch("transport", "room-controls", {generation, type, result});
         }
       };
