@@ -43,6 +43,25 @@ defmodule ReviewProjectWeb.RoomChannel do
     if RoomSocket.valid_session?(socket) do
       result =
         case {event, params} do
+          {event, params} when event in ["replay_select", "replay_cancel"] and is_map(params) ->
+            operation = if event == "replay_select", do: :replay_select, else: :replay_cancel
+
+            Rooms.request(
+              socket.assigns.current_scope,
+              socket.assigns.room_id,
+              {operation, params}
+            )
+
+          {"replay_preparation_failure", _} ->
+            Rooms.request(
+              socket.assigns.current_scope,
+              socket.assigns.room_id,
+              :replay_preparation_failure
+            )
+
+          {"replay_grant", _} ->
+            Rooms.request(socket.assigns.current_scope, socket.assigns.room_id, :replay_grant)
+
           {"snapshot", _} ->
             Rooms.request(socket.assigns.current_scope, socket.assigns.room_id, :snapshot)
 

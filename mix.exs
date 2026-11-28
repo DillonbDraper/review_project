@@ -143,6 +143,27 @@ defmodule ReviewProject.MixProject do
   end
 
   defp copy_media_wasm(_args) do
+    File.mkdir_p!("priv/static/assets/slippi")
+    manifest = File.read!("assets/vendor/slippi-player/manifest.json") |> Jason.decode!()
+
+    File.cp!(
+      "assets/vendor/slippi-player/manifest.json",
+      "priv/static/assets/slippi/manifest.json"
+    )
+
+    for {name, url} <- manifest do
+      source =
+        if name == "worker.mjs",
+          do: "assets/vendor/slippi-player/worker.mjs",
+          else: "assets/vendor/slippi-player/zips/" <> name
+
+      File.cp!(source, "priv/static" <> url)
+    end
+
+    for name <- ["NOTICES.txt", "provenance.json"] do
+      File.cp!("assets/vendor/slippi-player/" <> name, "priv/static/assets/slippi/" <> name)
+    end
+
     File.mkdir_p!("priv/static/assets/mediainfo")
 
     File.cp!(

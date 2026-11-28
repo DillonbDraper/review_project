@@ -91,6 +91,11 @@ defmodule ReviewProjectWeb.Endpoint do
 
   defp reject_retired_media(conn, _opts), do: conn
 
+  # Replay bodies are authorized and streamed by the controller for every content
+  # type. Do not let JSON/multipart parsers allocate or spool them beforehand.
+  defp parse_request_body(%{method: "POST", path_info: ["rooms", _, "replay"]} = conn, _opts),
+    do: conn
+
   defp parse_request_body(conn, _opts) do
     Plug.Parsers.call(
       conn,

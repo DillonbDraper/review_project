@@ -1,6 +1,7 @@
 // Native player handles browser events only. All playback policy is Elixir.
 import FileShare from "./file_share_native.mjs";
 import { loadAPI, playerError } from "./youtube_api.mjs";
+import ReplayUpload, { createReplayPlayer } from "./replay_native.mjs";
 
 export function createPlaybackNative(env = globalThis) {
   let generation = 0,
@@ -15,6 +16,7 @@ export function createPlaybackNative(env = globalThis) {
     if (!r) return;
     clearInterval(r.timer);
     clearTimeout(r.timeout);
+    r.replayAbort?.abort();
     try {
       r.player?.destroy();
     } catch {}
@@ -24,6 +26,7 @@ export function createPlaybackNative(env = globalThis) {
   };
   const suspend = () => {
     if (!resource) return;
+    resource.replayAbort?.abort();
     resource.suspended = true;
     resource.active = false;
     try {
@@ -46,13 +49,13 @@ export function createPlaybackNative(env = globalThis) {
     const ready = r.ready && !r.preparing && actualId(r) === r.videoId;
     let values = {};
     if (r.ready) {
-      const muted = r.player.isMuted();
+      const muted = r.provider === "slippi_replay" ? r.muted : r.player.isMuted();
       values = {
         position: finite(r.player.getCurrentTime(), 0),
         duration: finite(r.player.getDuration(), 0),
         state: finite(r.player.getPlayerState(), -1),
         playback_rate: finite(r.player.getPlaybackRate?.(), 1),
-        volume: finite(r.player.getVolume(), r.volume),
+        volume: r.provider === "slippi_replay" ? r.volume : finite(r.player.getVolume(), r.volume),
         muted: typeof muted === "boolean" ? muted : r.muted,
         video_id: actualId(r),
         live: r.player.getVideoData?.()?.isLive === true,
@@ -130,7 +133,32 @@ export function createPlaybackNative(env = globalThis) {
   const load = (expected, videoId, source = null) => {
     const r = resource;
     if (!r || r.generation !== expected || !current(r)) return;
-    r.provider = source?.kind === "local_file" ? "local_file" : "youtube";
+    const priorSample = read();
+    if(priorSample) {r.volume=priorSample.volume;r.muted=priorSample.muted;}
+    r.replayAbort?.abort();
+    (env.ReviewReplayResources || ReplayUpload).retainSource(source);
+    r.provider = source?.kind || "youtube";
+    if (r.provider === "slippi_replay") {
+      r.loadVersion = (r.loadVersion || 0) + 1;
+      const version = r.loadVersion;
+      clearTimeout(r.timeout);
+      r.player?.destroy();
+      r.frame?.remove();
+      Object.assign(r, {player:null, frame:null, loading:false, videoId, active:true, ready:false, preparing:true, blocked:false, error:""});
+      const controller = r.replayAbort = new AbortController();
+      const valid = () => current(r) && r.loadVersion === version && !controller.signal.aborted;
+      r.timeout = setTimeout(() => {if(valid()){(env.ReviewReplayResources || ReplayUpload).preparationFailed();r.error="Replay preparation timed out.";r.preparing=false;controller.abort();sample(r);}},30_000);
+      void createReplayPlayer(r.host, source, videoId, {signal:controller.signal, env, onChange:()=>{if(valid())sample(r);}}).then(player=>{
+        if (!valid()) { player.destroy(); return; }
+        clearTimeout(r.timeout);
+        r.player=player; r.frame=r.host.firstElementChild; r.ready=true; r.preparing=false; sample(r);
+      }).catch(error=>{if(valid()){clearTimeout(r.timeout);(env.ReviewReplayResources || ReplayUpload).preparationFailed();r.error=error.message;r.preparing=false;sample(r);}});
+      return;
+    }
+    if (r.frame?.classList?.contains("slippi-player")) {
+      r.player?.destroy(); r.frame?.remove();
+      Object.assign(r, {player:null,frame:null,ready:false,loading:false});
+    }
     if (r.provider === "local_file" || !r.loading || r.frame?.tagName === "VIDEO") r.loadVersion = (r.loadVersion || 0) + 1;
     const version = r.loadVersion;
     const validLoad = () => current(r) && r.loadVersion === version;
@@ -317,6 +345,7 @@ export function createPlaybackNative(env = globalThis) {
     const next = env.document.getElementById("video-player-host");
     if (next === host) return;
     destroy();
+    (env.ReviewReplayResources || ReplayUpload).release();
     host = next;
     if (host) {
       const mounted = host;
@@ -357,6 +386,8 @@ export function createPlaybackNative(env = globalThis) {
     suspend,
     clear: () => {
       if (!resource) return;
+      resource.replayAbort?.abort();
+      (env.ReviewReplayResources || ReplayUpload).release();
       resource.loadVersion = (resource.loadVersion || 0) + 1;
       clearTimeout(resource.timeout);
       resource.player?.destroy();

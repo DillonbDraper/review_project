@@ -1,0 +1,162 @@
+{
+  "repository": "https://github.com/frankborden/slippilab",
+  "revision": "ba4e09172344d1e7957de2d8a6eebab31632d92f",
+  "assets": [
+    {
+      "file": "zips/bowser.zip",
+      "upstreamPath": "public/zips/bowser.zip",
+      "gitBlob": "781909102f8bb254b1f50ddc6ed8ad6dedc889c6",
+      "sha256": "a175d4976ac9f8eb68bff54b2a72f1fa3931191a1ff3abe5f85cd8fb567fb019"
+    },
+    {
+      "file": "zips/captainFalcon.zip",
+      "upstreamPath": "public/zips/captainFalcon.zip",
+      "gitBlob": "43c75348ffc6fc1f411edb846c02eacf89cea658",
+      "sha256": "fa9657c5642df229e1d6b46f008aac81c0dbd3fe832f660897028c56e722e837"
+    },
+    {
+      "file": "zips/doctorMario.zip",
+      "upstreamPath": "public/zips/doctorMario.zip",
+      "gitBlob": "571ac21fa7e17cce30ced7decf0c6eb4590510c0",
+      "sha256": "0cc3859d07e64cb9384cef56ee9bd24193551c5d339fbd453c02d27ae84ded52"
+    },
+    {
+      "file": "zips/donkeyKong.zip",
+      "upstreamPath": "public/zips/donkeyKong.zip",
+      "gitBlob": "18f233236be51d3485020bcb09586aaf66e5553a",
+      "sha256": "ab547d1818fd7a4ce537c168a4115db71068fe3cba58204a8c5d382cc867cb90"
+    },
+    {
+      "file": "zips/falco.zip",
+      "upstreamPath": "public/zips/falco.zip",
+      "gitBlob": "98400eac6015fde5fae61090097133e4a51a8c13",
+      "sha256": "827cb54fde63aa560b3967ec2e72590f4fcfa5bb302588fb41fad94afd9adbd6"
+    },
+    {
+      "file": "zips/fox.zip",
+      "upstreamPath": "public/zips/fox.zip",
+      "gitBlob": "7a6a1604366d58770ffbba95db5c9b57ff7fe749",
+      "sha256": "64d99a790f4cb4751bee5e767c1351f4ae6f423451e5a746c3b757d2c9e16924"
+    },
+    {
+      "file": "zips/ganondorf.zip",
+      "upstreamPath": "public/zips/ganondorf.zip",
+      "gitBlob": "244212b3ab26355e31bdb0f17cbbcfc485d5dc76",
+      "sha256": "35c9137ca5e211d6856ae8e920363980c1688aac7184b2e36e455713ed161efa"
+    },
+    {
+      "file": "zips/iceClimbers.zip",
+      "upstreamPath": "public/zips/iceClimbers.zip",
+      "gitBlob": "e67cc0a9c3e0e2abbd82e58b7be0b0721e5cad8a",
+      "sha256": "1d85afacfe86bbc680d3595150de24a2e2d6ea4c4b4f7e3ccbf9727e774409e7"
+    },
+    {
+      "file": "zips/jigglypuff.zip",
+      "upstreamPath": "public/zips/jigglypuff.zip",
+      "gitBlob": "385a08d289c491ce1a9acd81c74f014039f716dd",
+      "sha256": "dfbd4c88f67216023a547a72f7c386be91d540d2f74e8e4dd438c96de23454b1"
+    },
+    {
+      "file": "zips/kirby.zip",
+      "upstreamPath": "public/zips/kirby.zip",
+      "gitBlob": "68d2a8630f29671302ac77eb91eb0195a61b34fc",
+      "sha256": "b09731f23317a994abb1cc35d2ed2f79b032fe5fc30ba349b43ab0bd7d1d5a3a"
+    },
+    {
+      "file": "zips/link.zip",
+      "upstreamPath": "public/zips/link.zip",
+      "gitBlob": "994aba82da59a30395669427703f86e7dccefffc",
+      "sha256": "d15f856ce47f05682293247f41ed68d04d7cb372f8fb7586d48f732c7d464ec4"
+    },
+    {
+      "file": "zips/luigi.zip",
+      "upstreamPath": "public/zips/luigi.zip",
+      "gitBlob": "f2b9c52ca65db2f16e9078ea43cddcee0d2ae883",
+      "sha256": "e019b6868514f7c6a3476b665a0d838b7b9375b47632e312ca0dcf9b07a3ba09"
+    },
+    {
+      "file": "zips/mario.zip",
+      "upstreamPath": "public/zips/mario.zip",
+      "gitBlob": "1a2c67734c421accbc4d7fc42b8ab9c1aab36907",
+      "sha256": "81364a4352bcae38558c1db47252b8e184a8a6057178e799570662e88e4d7a9c"
+    },
+    {
+      "file": "zips/marth.zip",
+      "upstreamPath": "public/zips/marth.zip",
+      "gitBlob": "fc686d1e47566c70c7f6952ed040fe28603244d8",
+      "sha256": "c502657af65d6af34de611f3ebe32cfc6833b0a04bfdd0f4c30f0d26cc8094e4"
+    },
+    {
+      "file": "zips/mewtwo.zip",
+      "upstreamPath": "public/zips/mewtwo.zip",
+      "gitBlob": "614bf28c572f97ecaba8579d111079790aecf119",
+      "sha256": "e2f518e9cb145bf9a0e4e5169c0ef23dca460c87ab24007c11928385ac8dc8a5"
+    },
+    {
+      "file": "zips/mrGameAndWatch.zip",
+      "upstreamPath": "public/zips/mrGameAndWatch.zip",
+      "gitBlob": "9f94fb50310ec7d37ebd81c05216b967859e3c88",
+      "sha256": "d4ee939cffa8b24660a348ca8974c2a0cb8e6557c28462dff6f1813d33b5ef7d"
+    },
+    {
+      "file": "zips/ness.zip",
+      "upstreamPath": "public/zips/ness.zip",
+      "gitBlob": "ee0e8af687109416571408c0ec1ba6227d872ad8",
+      "sha256": "b669e5fb6da3857793770b8c9ef1170628cb4651199975fdf4d9e8ba6b62aef0"
+    },
+    {
+      "file": "zips/peach.zip",
+      "upstreamPath": "public/zips/peach.zip",
+      "gitBlob": "f75c88017f78ecde712c65a0ac0315ec2f3c9bc9",
+      "sha256": "5a2d744006c02582a04d0badccd8aeceba93233541e16398c307ad03fd621c33"
+    },
+    {
+      "file": "zips/pichu.zip",
+      "upstreamPath": "public/zips/pichu.zip",
+      "gitBlob": "031d93e7f585f4818bf4718b887c1ce9ebf57b95",
+      "sha256": "a41db1fd21403db956f03710276ebbfde9d4d7b3c72726e46bb7f17f6fe9f749"
+    },
+    {
+      "file": "zips/pikachu.zip",
+      "upstreamPath": "public/zips/pikachu.zip",
+      "gitBlob": "ec5352adaa6fb95f9f917c5c7a0c0df4c9657f66",
+      "sha256": "6cfdac08f8746a859bdd7a9d67ec4f5f958531932508e1ed41031698810bbf78"
+    },
+    {
+      "file": "zips/roy.zip",
+      "upstreamPath": "public/zips/roy.zip",
+      "gitBlob": "7c6f25e923fd7666fe646b48efcb6ea70e45030e",
+      "sha256": "90aef8e49af9f388b4654b45d6e9fab78e3fb9054eebb1b662b7d6cecad29c54"
+    },
+    {
+      "file": "zips/samus.zip",
+      "upstreamPath": "public/zips/samus.zip",
+      "gitBlob": "5fdc49ed80372bea783b147c4b0e3525eecdc9ac",
+      "sha256": "1bc46248401571cb58c22bfcbabff9a9f870eac92f2b79e3e4026ee3da961de8"
+    },
+    {
+      "file": "zips/sheik.zip",
+      "upstreamPath": "public/zips/sheik.zip",
+      "gitBlob": "269e27a0bf0692fa07c5b0a3b79e06cbcdd701a4",
+      "sha256": "d6c7eaf7af40c2c2be6e93b819ab10118eab8b194c9074611295ce57118d2e97"
+    },
+    {
+      "file": "zips/yoshi.zip",
+      "upstreamPath": "public/zips/yoshi.zip",
+      "gitBlob": "9ee95e5fd739ee5f8c186fb803252d0e94b18e19",
+      "sha256": "fcd37a806782b502711ea683b88d7ec8902682d4a6aca55f47a650c1e8528d81"
+    },
+    {
+      "file": "zips/youngLink.zip",
+      "upstreamPath": "public/zips/youngLink.zip",
+      "gitBlob": "a2c7b7027a2548e4edb0920ce3af03bdcaecc52a",
+      "sha256": "933dbc1ff6ac73fc24b7ddc730622d6afe66de4c5e818f09acf2b6a593ff4243"
+    },
+    {
+      "file": "zips/zelda.zip",
+      "upstreamPath": "public/zips/zelda.zip",
+      "gitBlob": "7f8a71f717f9ce719f1dbfd03e1dbf999740aa4b",
+      "sha256": "88c8ab0de49af8fb2136577754b162c523c9e69d7d1ee4f3072b4ad545e2d1cd"
+    }
+  ]
+}

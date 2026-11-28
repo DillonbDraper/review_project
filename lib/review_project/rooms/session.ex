@@ -21,6 +21,9 @@ defmodule ReviewProject.Rooms.Session do
   def request(server, scope, member, operation),
     do: GenServer.call(server, {:request, scope, member, operation})
 
+  def replay_request(server, scope, identity, operation),
+    do: GenServer.call(server, {:replay_request, scope, identity, operation})
+
   @doc false
   def maintain(server), do: GenServer.call(server, :maintain)
 
@@ -55,6 +58,9 @@ defmodule ReviewProject.Rooms.Session do
           roster_revision: 0,
           peer_generations: %{},
           timeline: Timeline.new(now),
+          replay_path: nil,
+          replay_token: nil,
+          replay_selection: nil,
           file_generation: 0,
           file_page_id: nil,
           file_peer_generations: %{},
@@ -144,6 +150,36 @@ defmodule ReviewProject.Rooms.Session do
     else
       notify(state, :room_closed, %{reason: :closed})
       {:stop, :normal, {:error, :room_closed}, state}
+    end
+  end
+
+  def handle_call({:replay_request, scope, identity, {grant, operation}}, _from, state) do
+    state = maintain_state(state)
+    digest = if is_binary(identity), do: :crypto.hash(:sha256, [state.room.id, ":", identity])
+
+    member =
+      Enum.find(state.members, fn {_id, member} ->
+        member.pid != nil and
+          if member.seat.slot == 0,
+            do: Store.owner_id(scope) == state.room.owner_id,
+            else: digest != nil and member.seat.browser_identity_hash == digest
+      end)
+
+    if member != nil and Store.open?(state.room.id, state.wall_clock.()) do
+      {id, member} = member
+
+      case ReviewProject.Replays.verify(
+             grant,
+             state.room.id,
+             state.epoch,
+             id,
+             member.seat.connection_generation
+           ) do
+        :ok -> operate(operation, id, member, state)
+        error -> {:reply, error, state}
+      end
+    else
+      {:reply, {:error, :not_joined}, state}
     end
   end
 
@@ -243,7 +279,12 @@ defmodule ReviewProject.Rooms.Session do
     with :ok <- authorize_control(state, id, command) do
       case apply_control(state, command) do
         {:ok, timeline} ->
-          state = touch_share(%{state | timeline: timeline})
+          state =
+            if timeline.video_id != state.timeline.video_id,
+              do: release_replay(state),
+              else: state
+
+          state = touch_share(%{cancel_replay_selection(state) | timeline: timeline})
           broadcast(state)
           {:reply, {:ok, snapshot(state)}, state}
 
@@ -255,11 +296,106 @@ defmodule ReviewProject.Rooms.Session do
     end
   end
 
+  defp operate(:replay_preparation_failure, _id, member, state) do
+    case consume(member, :replay_failure, 6, state.clock.()) do
+      {:ok, member} ->
+        :telemetry.execute([:review_project, :replay, :preparation_failure], %{count: 1}, %{})
+        {:reply, {:ok, %{}}, %{state | members: Map.put(state.members, member.seat.id, member)}}
+
+      error ->
+        {:reply, error, state}
+    end
+  end
+
+  defp operate({:replay_select, params}, id, member, state) do
+    with :ok <- current_connection(params, member, state),
+         :ok <- authorize_control(state, id, params),
+         {:ok, selection} <- Ecto.UUID.cast(params["selection"]) do
+      state = cancel_replay_selection(state)
+      state = %{state | replay_selection: %{id: selection, seat: id}}
+      operate(:replay_grant, id, member, state)
+    else
+      _ -> {:reply, {:error, :stale_selection}, state}
+    end
+  end
+
+  defp operate({:replay_cancel, %{"selection" => selection}}, id, _member, state) do
+    state =
+      if state.replay_selection == %{id: selection, seat: id},
+        do: cancel_replay_selection(state),
+        else: state
+
+    {:reply, {:ok, snapshot(state)}, state}
+  end
+
+  defp operate(:replay_grant, id, member, state) do
+    grant =
+      ReviewProject.Replays.grant(
+        state.room.id,
+        state.epoch,
+        id,
+        member.seat.connection_generation
+      )
+
+    {:reply, {:ok, %{grant: grant}}, state}
+  end
+
+  defp operate({:replay_authorize, guards}, id, member, state) do
+    with :ok <- current_connection(guards, member, state),
+         :ok <- authorize_control(state, id, guards),
+         true <- state.replay_selection == %{id: guards["selection"], seat: id} do
+      {:reply, {:ok, %{coordinator: self()}}, state}
+    else
+      false -> {:reply, {:error, :stale_selection}, state}
+      error -> {:reply, error, state}
+    end
+  end
+
+  defp operate({:replay_commit, guards, source, token}, id, member, state) do
+    with :ok <- current_connection(guards, member, state),
+         :ok <- authorize_control(state, id, guards),
+         true <- state.replay_selection == %{id: guards["selection"], seat: id},
+         {:ok, owned_path} <- ReviewProject.Replays.Storage.accept(token) do
+      state = release_replay(state)
+      source = Map.merge(source, %{room_id: state.room.id, delivery: "server"})
+      timeline = Timeline.select_replay(state.timeline, source, state.clock.())
+
+      state =
+        touch_share(%{
+          state
+          | timeline: timeline,
+            replay_path: owned_path,
+            replay_token: token,
+            replay_selection: nil,
+            file_page_id: nil,
+            file_peer_generations: %{}
+        })
+
+      broadcast(state)
+      {:reply, {:ok, snapshot(state)}, state}
+    else
+      false -> {:reply, {:error, :stale_selection}, state}
+      {:error, reason} -> {:reply, {:error, reason}, state}
+    end
+  end
+
+  defp operate({:replay_read, id}, _seat, _member, state) do
+    case state.timeline.video_source do
+      %{kind: "slippi_replay", id: ^id} when is_binary(state.replay_path) ->
+        {:reply, {:ok, state.replay_path}, state}
+
+      _ ->
+        {:reply, {:error, :not_found}, state}
+    end
+  end
+
   defp operate({:file_offer, params}, id, member, state) when is_map(params) do
     with :ok <- current_connection(params, member, state),
          :ok <- authorize_control(state, id, params),
          {:ok, member} <- consume(member, :file_offer, 6, state.clock.()),
          {:ok, source, page_id} <- LocalFile.descriptor(params, id, state.file_generation + 1) do
+      state = release_replay(state)
+
       state =
         %{
           state
@@ -520,6 +656,8 @@ defmodule ReviewProject.Rooms.Session do
 
     state =
       if changed? do
+        state = cancel_replay_selection(state)
+
         %{
           state
           | controller_id: controller_id,
@@ -570,7 +708,32 @@ defmodule ReviewProject.Rooms.Session do
     state
   end
 
+  defp clear_file_source(%{timeline: %{video_source: %{kind: "slippi_replay"}}} = state) do
+    state = release_replay(state)
+    state = %{state | timeline: Timeline.clear(state.timeline, state.clock.())}
+    broadcast(state)
+    state
+  end
+
   defp clear_file_source(state), do: state
+
+  defp cancel_replay_selection(state) do
+    if state.replay_selection,
+      do: ReviewProject.Replays.Storage.cancel(state.room.id, state.replay_selection.id)
+
+    %{state | replay_selection: nil}
+  end
+
+  defp release_replay(state) do
+    if state.replay_token, do: ReviewProject.Replays.Storage.release(state.replay_token)
+    %{state | replay_path: nil, replay_token: nil}
+  end
+
+  @impl true
+  def terminate(_reason, state) do
+    release_replay(state)
+    :ok
+  end
 
   # Availability never survives departure. Only the same document may announce
   # its retained File after admission. Restoration always leaves playback paused.

@@ -91,6 +91,7 @@ defmodule ReviewProjectWeb.Hologram.PlaybackState do
     %{
       source: state.source,
       file_source: state.desired && Map.get(state.desired, :video_source),
+      replay_source: get_in(state.desired || %{}, [:video_source, :kind]) == "slippi_replay",
       source_label: source_label(state),
       video_id: state.desired && state.desired.video_id,
       loading?: state.loading,
@@ -124,6 +125,7 @@ defmodule ReviewProjectWeb.Hologram.PlaybackState do
   end
 
   defp source_label(%{desired: %{video_source: %{kind: "local_file", name: name}}}), do: name
+  defp source_label(%{desired: %{video_source: %{kind: "slippi_replay", name: name}}}), do: name
 
   defp source_label(%{desired: %{video_id: id}}) when is_binary(id),
     do: "https://www.youtube.com/watch?v=" <> id
@@ -285,6 +287,38 @@ defmodule ReviewProjectWeb.Hologram.PlaybackState do
         else: {state, []}
 
     {state, native_effects ++ effects ++ poll}
+  end
+
+  defp handle(state, :local_replay, %{source: source}) do
+    if solo?(state) do
+      now = state.sample.now
+
+      desired = %{
+        video_id: "slippi_replay:" <> source.id,
+        video_source: source,
+        position: 0,
+        playing: false,
+        revision: 0,
+        epoch: "solo",
+        authority_revision: 0,
+        controller_id: nil,
+        server_time_ms: now
+      }
+
+      reconcile(%{
+        state
+        | desired: desired,
+          enabled: true,
+          pending: nil,
+          queued: nil,
+          loading: false,
+          preview: nil,
+          native: PlaybackIntent.reset(),
+          force_seek: true
+      })
+    else
+      {state, []}
+    end
   end
 
   defp handle(state, :source, %{value: value}), do: {%{state | source: value, error: ""}, []}
@@ -616,6 +650,7 @@ defmodule ReviewProjectWeb.Hologram.PlaybackState do
         old =
           state.desired ||
             %{
+              video_source: nil,
               video_id: nil,
               playing: false,
               position: 0,
@@ -631,11 +666,25 @@ defmodule ReviewProjectWeb.Hologram.PlaybackState do
 
         next =
           case command.op do
-            "video" -> %{next | video_id: command.video_id, position: 0, playing: false}
-            "seek" -> %{next | position: command.position}
-            "set_playback" -> %{next | position: command.position, playing: command.playing}
-            "play" -> %{next | playing: true}
-            "pause" -> %{next | playing: false}
+            "video" ->
+              Map.merge(next, %{
+                video_id: command.video_id,
+                video_source: nil,
+                position: 0,
+                playing: false
+              })
+
+            "seek" ->
+              %{next | position: command.position}
+
+            "set_playback" ->
+              %{next | position: command.position, playing: command.playing}
+
+            "play" ->
+              %{next | playing: true}
+
+            "pause" ->
+              %{next | playing: false}
           end
 
         reconcile(%{
@@ -707,6 +756,11 @@ defmodule ReviewProjectWeb.Hologram.PlaybackState do
   defp reconcile(state, fresh? \\ false) do
     id = state.desired && state.desired.video_id
     now = state.sample.now
+
+    state =
+      if get_in(state.desired || %{}, [:video_source, :kind]) == "slippi_replay",
+        do: %{state | enabled: true},
+        else: state
 
     cond do
       not state.connected ->

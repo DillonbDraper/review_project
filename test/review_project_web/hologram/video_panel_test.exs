@@ -4,6 +4,31 @@ defmodule ReviewProjectWeb.Hologram.VideoPanelTest do
   alias Hologram.Template.Renderer
   alias ReviewProjectWeb.Hologram.{PlaybackState, VideoPanel}
 
+  test "replay selection is always available while room authority is enforced" do
+    workspace = VideoPanel.init(%{}, %Component{}, %Server{})
+
+    for component <- [workspace, select(workspace, "M7lc1UVf-VE"), room_video()] do
+      doc = document(component)
+
+      assert Enum.count(
+               LazyHTML.query(
+                 doc,
+                 "#upload-replay:not([disabled])[aria-controls='replay-dialog']"
+               )
+             ) == 1
+
+      assert Enum.count(LazyHTML.query(doc, "#replay-dialog")) == 1
+      assert VideoPanel.action(:open_replay, %{}, component).state.replay_open
+    end
+
+    unjoined = VideoPanel.init(%{room_id: "room"}, %Component{}, %Server{})
+
+    for component <- [unjoined, room_video("guest")] do
+      assert Enum.count(LazyHTML.query(document(component), "#upload-replay[disabled]")) == 1
+      refute VideoPanel.action(:open_replay, %{}, component).state.replay_open
+    end
+  end
+
   test "share callbacks use the native scope generation and selection request" do
     opened = VideoPanel.action(:open_share, %{}, room_video())
     chosen = VideoPanel.action(:choose_share, %{}, opened)

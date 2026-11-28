@@ -15,7 +15,7 @@
 !assets/**
 !vendor/
 !vendor/**
-assets/node_modules
+**/node_modules
 **/.git
 **/.env*
 priv/static/assets

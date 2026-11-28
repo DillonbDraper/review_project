@@ -73,6 +73,19 @@ defmodule ReviewProject.Rooms do
   def send_message(current_scope, room_id, attrs, member \\ self()),
     do: request(current_scope, room_id, {:chat, attrs}, member)
 
+  @doc false
+  def replay_request(current_scope, room_id, browser_identity, operation) do
+    case Registry.lookup(ReviewProject.Rooms.Registry, room_id) do
+      [{pid, _}] ->
+        session_call(fn ->
+          Session.replay_request(pid, current_scope, browser_identity, operation)
+        end)
+
+      [] ->
+        {:error, :not_joined}
+    end
+  end
+
   @doc "History for an authenticated owner, including closed rooms. Guests use joined requests."
   def list_messages(current_scope, room_id) do
     with {:ok, room} <- get_room(current_scope, room_id), do: Store.history(room.id)

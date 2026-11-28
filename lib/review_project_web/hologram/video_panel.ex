@@ -4,7 +4,14 @@ defmodule ReviewProjectWeb.Hologram.VideoPanel do
   use Hologram.JS
 
   alias ReviewProject.VideoSource
-  alias ReviewProjectWeb.Hologram.{PlaybackState, FileShareBrowser, FileShareState}
+
+  alias ReviewProjectWeb.Hologram.{
+    PlaybackState,
+    FileShareBrowser,
+    FileShareState,
+    ReplaySelectionState,
+    ReplaySelectionBrowser
+  }
 
   prop :room_id, :string, default: ""
   js_import from: "../../../assets/js/playback_native.mjs", as: :Player
@@ -22,6 +29,10 @@ defmodule ReviewProjectWeb.Hologram.VideoPanel do
         %{
           playback: state,
           switch_open: false,
+          replay_selection: ReplaySelectionState.new(),
+          replay_open: false,
+          replay_busy: false,
+          replay_message: "",
           sharing: FileShareState.new()
         }
       )
@@ -35,9 +46,10 @@ defmodule ReviewProjectWeb.Hologram.VideoPanel do
       <header class="video-header">
         {%if @video_id}
           <div class="video-source-controls">
-            <input id="current-video-source" class="workspace-input" type="text" value={@source_label} readonly aria-label="Current video URL" />
+            <input id="current-video-source" class="workspace-input" type="text" value={@source_label} readonly aria-label="Current source: YouTube, shared video or Slippi replay" />
             <button id="open-switch-video" type="button" class="secondary-button" $click="open_switch" disabled={!@can_control || @loading? || @busy} aria-haspopup="dialog" aria-controls="switch-video-dialog">Switch video</button>
             <button id="share-video" type="button" class="secondary-button" $click="open_share" disabled={!@solo && (!@can_control || !@connected)} aria-haspopup="dialog" aria-controls="share-video-dialog" aria-describedby="share-availability">Share video</button>
+            <button id="upload-replay" type="button" class="secondary-button" $click="open_replay" disabled={!@connected || !@can_control || @busy} aria-haspopup="dialog" aria-controls="replay-dialog" aria-describedby="replay-availability">{%if @solo}Open replay{%else}Upload replay{/if}</button>
           </div>
         {%else}
           <form id="video-source-form" $submit="load_video">
@@ -45,11 +57,13 @@ defmodule ReviewProjectWeb.Hologram.VideoPanel do
             <div class="video-source-controls">
               <input id="video-source" name="source" type="text" value={@source} $input="update_source" placeholder="Paste Youtube link here to get started" maxlength="2048" required disabled={!@can_control || @loading? || @busy} aria-describedby="video-error" aria-invalid={if(@playback_error != "", do: "true", else: "false")} class="workspace-input" />
               <button id="share-video" type="button" class="secondary-button" $click="open_share" disabled={!@solo && (!@can_control || !@connected)} aria-haspopup="dialog" aria-controls="share-video-dialog" aria-describedby="share-availability">Share video</button>
+              <button id="upload-replay" type="button" class="secondary-button" $click="open_replay" disabled={!@connected || !@can_control || @busy} aria-haspopup="dialog" aria-controls="replay-dialog" aria-describedby="replay-availability">{%if @solo}Open replay{%else}Upload replay{/if}</button>
               <button id="load-video" type="submit" class="primary-button" disabled={!@can_control || @loading? || @busy}>{%if @loading? || @busy}Loading…{%else}Load video{/if}</button>
             </div>
           </form>
         {/if}
         <p id="share-availability" class="field-hint" hidden={@solo || (@connected && @can_control)}>{%if !@connected}Join or reconnect to the room to share a video.{%else}Only the current playback controller can share videos.{/if}</p>
+        <p id="replay-availability" class="field-hint" hidden={@solo || (@connected && @can_control)}>{%if !@connected}Rejoin the room to upload a replay.{%else}Only the current playback controller can upload a replay.{/if}</p>
         <p id="share-transfer-status" class="field-hint" role="status">{@share_metrics}</p>
         <p id="video-error" role="status" class="field-error" hidden={@switch_open}>{@playback_error}</p>
       </header>
@@ -60,7 +74,7 @@ defmodule ReviewProjectWeb.Hologram.VideoPanel do
             <span class="video-orbit" aria-hidden="true"><span class="play-shape"></span></span>
             <span class="video-empty-kicker">GOOD IDEAS START WITH A CLOSER LOOK</span>
             <h3>Something worth watching.</h3>
-            <p>{%if @can_control}Paste a YouTube link above to bring it into your workspace.{%else}Join the room and follow the selected video.{/if}</p>
+            <p>{%if @can_control}Paste a YouTube link, share a video, or open a Slippi replay.{%else}Join the room and follow the selected video.{/if}</p>
           </div>
         {/if}
       </div>
@@ -75,10 +89,13 @@ defmodule ReviewProjectWeb.Hologram.VideoPanel do
         <label class="sr-only" for="video-seek">Seek video</label>
         <input id="video-seek" class="playback-seek" type="range" min="0" max={@duration} step="0.1" value={@position} $input={:preview_seek, generation: @player_generation} $change.debounce(200)={:seek, generation: @player_generation, authority_revision: @authority_revision, revision: @playback_revision} disabled={!@can_control || !@ready || @duration <= 0 || @busy} aria-valuetext={@elapsed} />
         <div class="playback-local-controls">
+          {%if !@replay_source}
           <button id="video-mute" type="button" class="secondary-button" $click="mute" disabled={!@ready} aria-pressed={if(@muted, do: "true", else: "false")}>{%if @muted}Unmute video{%else}Mute video{/if}</button>
           <label for="video-volume">Volume <span class="sr-only">on this device</span></label>
           <input id="video-volume" type="range" min="0" max="100" step="1" value={@volume} $input="volume" disabled={!@ready} aria-label="Video volume on this device" />
-          {%if @video_id && (!@enabled || @blocked)}
+          {/if}
+          {%if @replay_source}<span class="field-hint">Approximate Slippi replay · No game audio</span>{/if}
+          {%if !@replay_source && @video_id && (!@enabled || @blocked)}
             <window $resize="position_playback_info" $scroll="position_playback_info" />
             <div class="playback-enable-controls">
               <button id="video-enable" type="button" class="secondary-button" $click="enable" disabled={!@ready || !@connected || @unsupported}>Enable playback on this device</button>
@@ -96,6 +113,15 @@ defmodule ReviewProjectWeb.Hologram.VideoPanel do
         <p id="video-player-error" class="field-error" role="status">{@player_error}</p>
       </div>
       <ReviewProjectWeb.Hologram.ShareDialog id="share-dialog" solo={@solo} can_control={@can_control} share_message={@share_message} />
+      <dialog id="replay-dialog" class="room-dialog" aria-labelledby="replay-heading" $key_down.escape.prevent_default="close_replay">
+        <div class="room-dialog-heading"><span class="eyebrow">SLIPPI REPLAY</span><button id="close-replay" type="button" class="dialog-close" $click="close_replay">Close</button></div>
+        <h2 id="replay-heading">Review a Melee replay</h2>
+        <p class="room-dialog-description">{%if @solo}Open a .slp file locally, without uploading or signing in. Sharing later requires choosing the file again in a room.{%else}Upload one .slp file for everyone in this room. Participants follow automatically once ready.{/if} The approximate visualization has no game audio. Use play, pause and seek below.</p>
+        <p class="field-hint">Complete games on the six competitive stages are supported. Your current source stays until the replay is accepted. Room replays are temporary: removed on replacement, room closure, five minutes empty, or an hour without playback or deliberate interaction.</p>
+        <p id="replay-status" class="field-hint" role="status">{@replay_message}</p>
+        <button id="choose-replay" type="button" class="primary-button room-submit" $click="choose_replay" disabled={@replay_busy || !@connected || !@can_control}>{%if @replay_busy}Preparing replay…{%else}Choose .slp file{/if}</button>
+        {%if @replay_busy}<button id="cancel-replay" type="button" class="secondary-button" $click="close_replay">Cancel preparation</button>{/if}
+      </dialog>
       <dialog id="switch-video-dialog" class="room-dialog" aria-labelledby="switch-video-heading" $key_down.escape.prevent_default="close_switch">
         <div class="room-dialog-heading">
           <span class="eyebrow">UP NEXT</span>
@@ -129,6 +155,9 @@ defmodule ReviewProjectWeb.Hologram.VideoPanel do
     state = component.state.playback
 
     if params.room_generation >= state.room_generation do
+      component =
+        if params.kind == :stopped, do: action(:close_replay, %{}, component), else: component
+
       component = share_room_event(component, params)
 
       {event, data} =
@@ -157,6 +186,21 @@ defmodule ReviewProjectWeb.Hologram.VideoPanel do
       %{component | next_action: Map.get(params, :next_action)}
     end
   end
+
+  def action(:open_replay, _, component) do
+    activity(component)
+    replay_transition(component, :open, %{})
+  end
+
+  def action(:close_replay, _, component), do: replay_transition(component, :close, %{})
+
+  def action(:choose_replay, _, component) do
+    activity(component)
+    replay_transition(component, :choose, %{})
+  end
+
+  def action(:replay_result, params, component),
+    do: replay_transition(component, :result, %{result: params})
 
   def action(:open_share, _, component),
     do: share_transition(component, :open, %{solo: PlaybackState.solo?(component.state.playback)})
@@ -377,6 +421,30 @@ defmodule ReviewProjectWeb.Hologram.VideoPanel do
       Enum.reduce(FileShareBrowser.perform(component.state.sharing, effect), component, fn
         {:player_ready, data}, component -> action(:file_connection_ready, data, component)
         {event, data}, component -> share_transition(component, event, data)
+      end)
+    end)
+  end
+
+  defp replay_transition(component, event, params) do
+    previous = component.state.replay_selection
+
+    params = Map.put(params, :playback, component.state.playback)
+
+    {state, effects} = ReplaySelectionState.event(previous, event, params)
+
+    component =
+      put_state(component, Map.put(ReplaySelectionState.view(state), :replay_selection, state))
+
+    if previous.open != state.open, do: JS.call(:Browser, :dialog, ["replay-dialog", state.open])
+
+    Enum.reduce(effects, component, fn effect, component ->
+      Enum.reduce(ReplaySelectionBrowser.perform(effect), component, fn {event, params},
+                                                                        component ->
+        transition(
+          component,
+          event,
+          Map.put(params, :room_generation, component.state.playback.room_generation)
+        )
       end)
     end)
   end

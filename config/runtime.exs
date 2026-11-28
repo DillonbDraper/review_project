@@ -1,5 +1,18 @@
 import Config
 
+config :review_project, :replay_storage,
+  directory:
+    System.get_env(
+      "REPLAY_STORAGE_DIRECTORY",
+      Path.join(
+        System.tmp_dir!(),
+        "review-project-replays-#{config_env()}-#{System.get_env("PORT", "4000")}"
+      )
+    ),
+  max_room: String.to_integer(System.get_env("REPLAY_UPLOADS_PER_ROOM", "1")),
+  max_node: String.to_integer(System.get_env("REPLAY_UPLOADS_PER_NODE", "2")),
+  headroom: String.to_integer(System.get_env("REPLAY_DISK_HEADROOM_BYTES", "1073741824"))
+
 # config/runtime.exs is executed for all environments, including
 # during releases. It is executed after compilation and before the
 # system starts, so it is typically used to load production configuration

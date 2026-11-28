@@ -1,0 +1,348 @@
+{
+  "date": "2026-11-27",
+  "timezone": "America/Chicago",
+  "status": "ready for production (owner approval 2026-11-28)",
+  "automated": {
+    "mixPrecommit": {
+      "result": "pass",
+      "tests": 481
+    },
+    "nativeJavaScriptAndAssets": {
+      "result": "pass",
+      "tests": 54
+    },
+    "cleanPinnedDependencyBuildCheck": "pass",
+    "upstreamArchiveGitBlobVerification": {
+      "result": "pass",
+      "archives": 26
+    },
+    "productionContainerBuildAndSmoke": "pass",
+    "finalPostNavigationCleanupSoloSmoke": {
+      "result": "pass",
+      "browser": "Chrome/158.0.8127.36",
+      "fixtures": [
+        "synthetic-rollback-characters",
+        "doubles",
+        "FodPlatforms"
+      ]
+    }
+  },
+  "browserScope": "Local Linux machine, isolated contexts, synthetic microphone/camera streams; sequential reported-position samples over about five settled seconds. This is not presented-frame timing, a WAN result, or a long-duration sync guarantee.",
+  "roomRuns": [
+    {
+      "result": "pass",
+      "browser": "Chrome/158.0.8127.36",
+      "firefox": null,
+      "participants": 5,
+      "activeSyntheticConference": true,
+      "samples": 20,
+      "p95AbsoluteDriftSeconds": 0.04570000000298036,
+      "p95ParticipantSpreadSeconds": 0.01839997558295714,
+      "selectionPreparationMs": 1791.4129470000044,
+      "reloadTotalMs": 18721.722152999995,
+      "reloadReadyRecoveryMs": null,
+      "transportReadyRecoveryMs": null,
+      "foregroundRecoveryMs": 0.6611170000105631,
+      "backgroundHidden": null,
+      "explicitSelectionRetries": 0,
+      "checks": [
+        "anonymous solo replay, no replay HTTP traffic, positional marker, end/replay",
+        "five admitted participants with active camera/microphone RTP",
+        "separate replay path and follower authority",
+        "doubles upload, paused publication, SVG character rendering and silent controls",
+        "shared playback with p95 absolute drift and spread at most 0.5 seconds",
+        "background/foreground recovery",
+        "shared pause and paused frame-aligned seek",
+        "guest reload fetches replay and recovers paused position",
+        "late join automatically follows accepted replay",
+        "incomplete selection preserves previous replay",
+        "Fountain platform replay renders on both participants",
+        "replay survives uploader departure and guest handoff",
+        "end stops and Replay restarts from zero"
+      ],
+      "applicationErrors": []
+    },
+    {
+      "result": "pass",
+      "browser": "Edg/158.0.4370.45",
+      "firefox": null,
+      "participants": 5,
+      "activeSyntheticConference": true,
+      "samples": 20,
+      "p95AbsoluteDriftSeconds": 0.2131000000014902,
+      "p95ParticipantSpreadSeconds": 0.18929999999701996,
+      "selectionPreparationMs": 2264.474589000005,
+      "reloadTotalMs": 28682.822770999992,
+      "reloadReadyRecoveryMs": 2799.912836000003,
+      "transportReadyRecoveryMs": 2877.461559999996,
+      "foregroundRecoveryMs": 164.4123940000136,
+      "backgroundHidden": true,
+      "explicitSelectionRetries": 0,
+      "checks": [
+        "anonymous solo replay, no replay HTTP traffic, positional marker, end/replay",
+        "five admitted participants with active camera/microphone RTP",
+        "separate replay path and follower authority",
+        "doubles upload, paused publication, SVG character rendering and silent controls",
+        "shared playback with p95 absolute drift and spread at most 0.5 seconds",
+        "background/foreground recovery",
+        "shared pause and paused frame-aligned seek",
+        "guest reload fetches replay and recovers paused position",
+        "signaling recovery retains replay and aligns within five seconds of readiness",
+        "late join automatically follows accepted replay",
+        "incomplete selection preserves previous replay",
+        "Fountain platform replay renders on both participants",
+        "replay survives uploader departure and guest handoff",
+        "end stops and Replay restarts from zero"
+      ],
+      "applicationErrors": []
+    },
+    {
+      "result": "pass",
+      "browser": "Chrome/158.0.8127.36",
+      "firefox": "160.0.1",
+      "participants": 5,
+      "activeSyntheticConference": true,
+      "samples": 20,
+      "p95AbsoluteDriftSeconds": 0.18999999999999995,
+      "p95ParticipantSpreadSeconds": 0.1652000000029803,
+      "selectionPreparationMs": 2178.399528000009,
+      "reloadTotalMs": 17616.499503,
+      "reloadReadyRecoveryMs": 1530.8119330000045,
+      "transportReadyRecoveryMs": 187.07874599999923,
+      "foregroundRecoveryMs": 7.587698999996064,
+      "backgroundHidden": true,
+      "explicitSelectionRetries": 0,
+      "checks": [
+        "anonymous solo replay, no replay HTTP traffic, positional marker, end/replay",
+        "five admitted participants with active camera/microphone RTP",
+        "separate replay path and follower authority",
+        "doubles upload, paused publication, SVG character rendering and silent controls",
+        "shared playback with p95 absolute drift and spread at most 0.5 seconds",
+        "background/foreground recovery",
+        "shared pause and paused frame-aligned seek",
+        "guest reload fetches replay and recovers paused position",
+        "signaling recovery retains replay and aligns within five seconds of readiness",
+        "late join automatically follows accepted replay",
+        "incomplete selection preserves previous replay",
+        "Fountain platform replay renders on both participants",
+        "replay survives uploader departure and guest handoff",
+        "end stops and Replay restarts from zero"
+      ],
+      "applicationErrors": []
+    }
+  ],
+  "soloRuns": [
+    {
+      "browser": "Chrome/158.0.8127.36",
+      "result": "pass",
+      "preparations": [
+        {
+          "fixture": "synthetic-rollback-characters",
+          "elapsedMs": 5039.986473000001,
+          "durationSeconds": 0.05,
+          "heapBytes": 39994445
+        },
+        {
+          "fixture": "doubles",
+          "elapsedMs": 10133.247744000004,
+          "durationSeconds": 147.76666666666668,
+          "heapBytes": 78064573
+        },
+        {
+          "fixture": "FodPlatforms",
+          "elapsedMs": 6505.180930000002,
+          "durationSeconds": 176.4,
+          "heapBytes": 48227589
+        },
+        {
+          "fixture": "review-replay-long.slp",
+          "elapsedMs": 11288.415833,
+          "durationSeconds": 600,
+          "heapBytes": 93366577
+        },
+        {
+          "fixture": "doubles",
+          "elapsedMs": 2297.1033300000054,
+          "durationSeconds": 147.76666666666668,
+          "heapBytes": 78108123
+        },
+        {
+          "fixture": "review-replay-long.slp",
+          "elapsedMs": 3824.144435000002,
+          "durationSeconds": 600,
+          "heapBytes": 92574768
+        },
+        {
+          "fixture": "doubles",
+          "elapsedMs": 2129.868420999999,
+          "durationSeconds": 147.76666666666668,
+          "heapBytes": 77707183
+        }
+      ]
+    },
+    {
+      "browser": "Edg/158.0.4370.45",
+      "result": "pass",
+      "preparations": [
+        {
+          "fixture": "synthetic-rollback-characters",
+          "elapsedMs": 678.551768,
+          "durationSeconds": 0.05,
+          "heapBytes": 62984170
+        },
+        {
+          "fixture": "doubles",
+          "elapsedMs": 2287.7245730000004,
+          "durationSeconds": 147.76666666666668,
+          "heapBytes": 75439248
+        },
+        {
+          "fixture": "FodPlatforms",
+          "elapsedMs": 1620.7005879999997,
+          "durationSeconds": 176.4,
+          "heapBytes": 190436304
+        },
+        {
+          "fixture": "review-replay-long.slp",
+          "elapsedMs": 4473.220687999999,
+          "durationSeconds": 600,
+          "heapBytes": 90626045
+        },
+        {
+          "fixture": "doubles",
+          "elapsedMs": 2297.3970420000005,
+          "durationSeconds": 147.76666666666668,
+          "heapBytes": 76003614
+        },
+        {
+          "fixture": "review-replay-long.slp",
+          "elapsedMs": 4484.618171,
+          "durationSeconds": 600,
+          "heapBytes": 90983419
+        },
+        {
+          "fixture": "doubles",
+          "elapsedMs": 2297.9311880000005,
+          "durationSeconds": 147.76666666666668,
+          "heapBytes": 76166962
+        }
+      ]
+    },
+    {
+      "browser": "160.0.1",
+      "result": "pass",
+      "preparations": [
+        {
+          "fixture": "synthetic-rollback-characters",
+          "elapsedMs": 468.28058200000004,
+          "durationSeconds": 0.05,
+          "heapBytes": null
+        },
+        {
+          "fixture": "doubles",
+          "elapsedMs": 1928.2372609999998,
+          "durationSeconds": 147.76666666666668,
+          "heapBytes": null
+        },
+        {
+          "fixture": "FodPlatforms",
+          "elapsedMs": 1339.0936790000005,
+          "durationSeconds": 176.4,
+          "heapBytes": null
+        }
+      ]
+    }
+  ],
+  "workerBenchmark": {
+    "kind": "Node worker; synthetic ten-minute replay; parsed result cloned to caller",
+    "node": "v24.15.0",
+    "bytes": 10368362,
+    "runs": [
+      {
+        "elapsedMs": 1252.656448,
+        "metadata": {
+          "frames": 36000,
+          "stage": 2,
+          "duration": 600
+        },
+        "rssAtDelivery": 471240704,
+        "afterGc": {
+          "rss": 438091776,
+          "heapTotal": 140976128,
+          "heapUsed": 4570888,
+          "external": 1945775,
+          "arrayBuffers": 10391129
+        }
+      },
+      {
+        "elapsedMs": 1187.246327,
+        "metadata": {
+          "frames": 36000,
+          "stage": 2,
+          "duration": 600
+        },
+        "rssAtDelivery": 494051328,
+        "afterGc": {
+          "rss": 448614400,
+          "heapTotal": 139927552,
+          "heapUsed": 4631288,
+          "external": 1945775,
+          "arrayBuffers": 10391129
+        }
+      },
+      {
+        "elapsedMs": 1239.3958389999998,
+        "metadata": {
+          "frames": 36000,
+          "stage": 2,
+          "duration": 600
+        },
+        "rssAtDelivery": 495718400,
+        "afterGc": {
+          "rss": 450359296,
+          "heapTotal": 139665408,
+          "heapUsed": 4641992,
+          "external": 1945775,
+          "arrayBuffers": 10391129
+        }
+      },
+      {
+        "elapsedMs": 1087.4181959999996,
+        "metadata": {
+          "frames": 36000,
+          "stage": 2,
+          "duration": 600
+        },
+        "rssAtDelivery": 498118656,
+        "afterGc": {
+          "rss": 452677632,
+          "heapTotal": 139665408,
+          "heapUsed": 4653248,
+          "external": 1945775,
+          "arrayBuffers": 10391129
+        }
+      }
+    ]
+  },
+  "historicalFailures": "Initial runs exposed a publication-response cancellation race, which is fixed and regression tested. Harness iterations corrected device instrumentation order, dialog readiness, browser-driver selection and closed-peer counting. An earlier concurrent Edge run had a local preparation timeout on reload; the later standalone run passed. Interrupted/dev-reload runs do not supply acceptance metrics.",
+  "productionDecision": {
+    "date": "2026-11-28",
+    "scope": "Slippi replay support",
+    "decision": "Owner approved production readiness despite the recorded verification gaps.",
+    "verificationGapsAcceptedAsNonBlocking": true,
+    "minimumSoakDurationSelected": false,
+    "recordedTestResultsUnchanged": true,
+    "deploymentPerformed": false,
+    "availability": "Replay support is included in every environment; deployment remains a separate operation.",
+    "featureGateRemoved": {
+      "date": "2026-11-28",
+      "decision": "Owner requested unconditional replay availability and removal of the feature gate."
+    }
+  },
+  "unverifiedFollowUps": [
+    "Safari on macOS with five participants and active conferencing.",
+    "Representative WAN/TURN and physical device contention; these runs use one Linux host and synthetic capture.",
+    "Broader browser/OS roles and longer settled-playback soak measurements."
+  ],
+  "remainingReleaseBlockers": []
+}

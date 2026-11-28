@@ -13,10 +13,10 @@ provide historical context and do not override these decisions.
 | Area | Decision |
 | --- | --- |
 | Release | Free tier only. |
-| Video sources | YouTube plus original prerecorded MP4/WebM files shared directly from a participant’s browser; direct-delivery replacement approved 2026-11-27. |
+| Video sources | YouTube, original prerecorded MP4/WebM files shared directly from a participant’s browser, and Slippi replays; integration approved 2026-11-27. |
 | Participants | Five total per room, including the host. |
 | Session duration | No application-imposed time limit. |
-| Features | Synchronized YouTube/local-file playback, mesh voice/video conferencing, and chat. |
+| Features | Synchronized YouTube/local-file/replay playback, solo local replay review, mesh voice/video conferencing, and chat. |
 | Recording and drawing | Neither included. No recording of any kind in the free tier. |
 | Access | Host signs in; guests join by invitation link without accounts and choose display names. |
 | Browsers | Current desktop Chrome, Edge, Firefox, and Safari. Mobile support is deferred. |
@@ -38,7 +38,7 @@ flow. These choices were selected by the project owner on 2026-11-21.
 1. An authenticated host creates a room and shares its invitation link.
 2. Up to four guests join without registering, bringing the room to a maximum of
    five participants including the host.
-3. The current playback controller selects a YouTube video or a locally inspected shared file. Play, pause, and seek actions synchronize
+3. The current playback controller selects a YouTube video, a locally inspected shared file, or a Slippi replay. Play, pause, and seek actions synchronize
    playback across participants. Participants can use chat and mesh voice/video
    conferencing during the session.
 4. If the host disconnects, a connected guest receives playback control so the
@@ -204,11 +204,72 @@ See [direct-file operations and validation](direct-file-sharing.md). Prior uploa
 measurements do not establish acceptance of the replacement transport. Browser,
 network, conferencing and performance checks must record their actual scope.
 
+## Slippi replay integration
+
+On 2026-11-27 the owner approved promoting the Slippi spike into the main
+application as a third source, retaining the approximate SlippiLab-derived
+visualization. The approved integration plan supersedes the earlier spike-only
+scope. Implementation and release verification remain distinct.
+
+- Support complete singles/doubles replays on the six competitive stages, using
+  the spike's 60-frame timeline and pre-game offset. Visuals are approximate,
+  with no game audio. Missing optional animation fields use a positional marker;
+  malformed required data produces a clear error.
+- Keep a separate .slp chooser, labeled **Open replay** outside rooms and
+  **Upload replay** inside rooms. Solo review reads locally without an account
+  or upload. A prepared selection starts paused at zero; a failed selection
+  preserves the previous source. Entering a room releases solo playback and
+  follows the room source. Sharing always requires explicit selection/upload.
+- Only the current room controller selects a replay. Accepted uploads start
+  paused at zero; participants follow automatically when ready without the video
+  autoplay-enablement prompt. Retain epoch, seat connection, authority and playback
+  revision guards. An accepted replay survives uploader departure; individual
+  preparation failures do not pause everyone.
+- Use the existing play/pause/seek controls. Stop at the end and offer Replay from
+  zero. Hide audio controls while preserving each participant's video volume and
+  mute preferences. Frame stepping and speed controls remain deferred.
+- Replay uploads are a separate exception to direct video delivery. No fixed
+  replay file-size cap is selected. Default operational safeguards are one upload
+  per room, two per application node, and 1 GiB free disk headroom after
+  reservations; all are configurable. Stream into private temporary storage and
+  validate outside the coordinator. Session/CSRF-protected HTTP grants are issued
+  through joined room channels and tied to epoch, seat and connection generation.
+- Delete staged data on failure, cancellation or request death. Delete accepted
+  data on replacement, room closure, five continuous minutes empty, or one
+  continuous hour without playback or deliberate interaction. Background traffic
+  does not extend retention. Cleanup releases the replay only, preserving the
+  room, chat and call. Cancelled publication reconciles to an already accepted
+  source, if any.
+- Storage is ephemeral and single-node. Application/coordinator restarts require
+  re-upload. No database migration, saved library, persistent volume or object
+  store is included. Reclaim orphaned files and invalidate affected coordinators
+  before storage reinitialization.
+- Replay support is included in every environment. On 2026-11-28, the owner marked Slippi
+  replay support ready for production, accepting the outstanding Safari,
+  representative WAN/TURN and physical-device verification gaps. Broader browser
+  roles and longer continuous-playback checks are nonblocking follow-ups; no
+  minimum soak duration was selected. This supersedes the replay-specific
+  requirement to wait for every verification entry before production approval.
+  The recorded evidence remains unchanged; unperformed checks are not recorded
+  as passing. The owner subsequently removed the replay feature gate on the same
+  date; production deployment requires no replay opt-in. Deployment remains a
+  separate operation. This approval
+  applies to Slippi replay support, not other features' release decisions.
+  The existing ≤0.5-second
+  p95 absolute timeline drift/spread and five-second ready-player recovery targets
+  apply. Preparation is measured separately; the historical two-participant spike
+  does not establish release acceptance.
+
+See [replay operations and validation](slippi-replays.md). The
+[integration spike](slippi-integration-spike.md) remains historical evidence;
+its results are not proof of the full integration's release targets.
+
 ## Explicitly deferred
 
 - Paid tiers, billing, and subscription purchase flows.
 - A permanently saved media library, object storage, persistent media volumes,
-  transcoding, and providers other than YouTube or the approved direct local-file path.
+  transcoding, and providers other than YouTube, the approved direct local-file path,
+  or the approved Slippi replay path.
 - Drawing and annotation features.
 - Session recording, recording exports, and screen-capture features.
 - Mobile browser support.

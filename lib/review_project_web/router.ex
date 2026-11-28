@@ -29,6 +29,11 @@ defmodule ReviewProjectWeb.Router do
     # The video workspace at / is handled by Hologram.Router in the endpoint.
     get "/room-session", RoomController, :session
     get "/room-sign-in", RoomController, :sign_in
+
+    # Admitted guests have no account. Controllers validate live membership and
+    # upload authority after the browser pipeline verifies session and CSRF.
+    post "/rooms/:room_id/replay", ReplayController, :create
+    get "/rooms/:room_id/replay/:id", ReplayController, :show
   end
 
   # Other scopes may use custom stacks.

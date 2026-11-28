@@ -75,6 +75,15 @@ defmodule ReviewProjectWeb.Telemetry do
           "The time the connection spent waiting before being checked out for the query"
       ),
 
+      # Replay operations expose finite codes and counts, never private paths,
+      # replay contents, HTTP grants or participant identities.
+      sum("review_project.replay.upload_failure.count", tags: [:reason]),
+      sum("review_project.replay.preparation_failure.count"),
+      sum("review_project.replay.cleanup_failure.count"),
+      last_value("review_project.replay.storage.active_transfers"),
+      last_value("review_project.replay.storage.reserved_bytes", unit: :byte),
+      last_value("review_project.replay.storage.stored_bytes", unit: :byte),
+
       # VM Metrics
       summary("vm.memory.total", unit: {:byte, :kilobyte}),
       summary("vm.total_run_queue_lengths.total"),

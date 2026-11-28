@@ -32,6 +32,18 @@ defmodule ReviewProject.Rooms.Timeline do
     %{next | video_id: nil, video_source: nil, playing: false, position: 0.0}
   end
 
+  def select_replay(timeline, source, now) do
+    next = bump(timeline, now)
+
+    %{
+      next
+      | video_id: "slippi_replay:" <> source.id,
+        video_source: source,
+        playing: false,
+        position: 0.0
+    }
+  end
+
   # Preserve the actual end across arbitrarily delayed maintenance and authority bumps.
   def playback_end(%{playing: true, video_source: %{duration: duration}} = timeline)
       when is_number(duration) and duration > 0,

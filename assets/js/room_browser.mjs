@@ -3,6 +3,7 @@ import {Socket} from "../../deps/phoenix/priv/static/phoenix.mjs";
 import ConferenceNative from "./conference_native.mjs";
 import FileShare from "./file_share_native.mjs";
 import PlaybackNative from "./playback_native.mjs";
+import ReplayUpload from "./replay_native.mjs";
 
 function browser() {
   let host, transport;
@@ -18,6 +19,7 @@ function browser() {
     try { sessionStorage.setItem(`review-room:${id}`, JSON.stringify(next)); } catch {}
   };
   const disconnect = () => {
+    ReplayUpload.bind(null);
     FileShare.suspend();
     ConferenceNative.invalidate();
     PlaybackNative.suspend();
@@ -31,6 +33,7 @@ function browser() {
     if (next === host) return;
     disconnect();
     FileShare.release();
+    ReplayUpload.release();
     host = next;
     if (host) {
       const mounted = host;
@@ -96,11 +99,12 @@ function browser() {
       const socket = new Socket(path, {params: {_csrf_token: csrf}});
       const channel = socket.channel(topic, params);
       const resource = transport = {socket, channel};
+      ReplayUpload.bind(channel);
       const report = (type, result = {}) => {
         if (transport === resource) {
           // Release devices before Hologram processes the transport event.
           // Recovery decisions and component-to-component routing live in Elixir.
-          if (type === "lost" || type === "room_ended" || type === "room_restart") { ConferenceNative.invalidate(); PlaybackNative.suspend(); }
+          if (type === "lost" || type === "room_ended" || type === "room_restart") { ReplayUpload.bind(null); ConferenceNative.invalidate(); PlaybackNative.suspend(); }
           if (type === "lost") FileShare.suspend();
           if (["room_ended", "room_restart", "refused"].includes(type)) FileShare.release();
           dispatch("transport", "room-controls", {generation, type, result});

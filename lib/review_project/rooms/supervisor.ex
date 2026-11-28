@@ -8,6 +8,8 @@ defmodule ReviewProject.Rooms.Supervisor do
   def init(_opts) do
     children = [
       {Registry, keys: :unique, name: ReviewProject.Rooms.Registry},
+      ReviewProject.Replays.Storage,
+      {Task.Supervisor, name: ReviewProject.Replays.Tasks},
       {DynamicSupervisor, strategy: :one_for_one, name: ReviewProject.Rooms.SessionSupervisor},
       {ReviewProject.Rooms.Expiry, Application.get_env(:review_project, :room_expiry_worker, [])}
     ]
